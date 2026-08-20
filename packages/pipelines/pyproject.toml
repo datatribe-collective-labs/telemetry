@@ -1,0 +1,16 @@
+[project]
+name = "pipelines"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "contracts",
+    "confluent-kafka>=2.0",
+    "numpy>=1.26",
+]
+
+[tool.uv.sources]
+contracts = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

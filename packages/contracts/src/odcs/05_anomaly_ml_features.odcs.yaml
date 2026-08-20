@@ -1,0 +1,795 @@
+apiVersion: v3.1.0
+kind: DataContract
+id: 8a0b2c4d-6e7f-4a8b-0c1d-2e3f4a5b6c7d
+name: anomaly_events
+version: 1.1.0
+status: active
+domain: spacecraft_digital_twin
+
+description:
+  purpose: >
+    Anomaly events produced by the two-layer detection system:
+      Layer 1 — Contract violations (physically impossible values, hard rejected at ingest).
+                 These appear as severity=CRITICAL with a direct contract reference.
+      Layer 2 — Rule-based anomalies (physically valid but operationally unexpected,
+                 detected via physics-baseline residuals). Severity WARNING or ALERT.
+    Published to Kafka topic `events`. Consumed by the dashboard alert system,
+    Superset anomaly explorer, and any downstream ML training pipeline.
+    The contract for anomaly *events* is deliberately separate from the contracts
+    for the *telemetry* — an anomaly event is a derived data product with its
+    own schema and quality guarantees.
+  limitations: >
+    Layer 1 violations are deterministic and exhaustive for the fields covered.
+    Layer 2 anomalies are heuristic — they produce false positives during
+    legitimate maneuvers (burns, attitude slews). Consumers must gate on
+    mission_phase before alerting.
+
+team:
+  - username: ${DATA_PRODUCT_OWNER}
+    role: Data Product Owner
+    description: Configured at deployment
+  - username: ${DATA_PRODUCT_CONSUMER}
+    role: Data Product Consumer
+    description: Configured at deployment
+
+servers:
+  - server: ${KAFKA_EVENTS_SERVER}
+    environment: production
+    type: kafka
+    host: ${KAFKA_BOOTSTRAP_SERVERS}
+    topic: ${KAFKA_EVENTS_TOPIC}
+
+slaProperties:
+  - property: latency
+    value: 10
+    unit: s
+    description: Max delay from telemetry tick to anomaly event publication
+  - property: availability
+    value: 99.0
+    unit: percent
+
+schema:
+  - id: anomaly_event
+    name: anomaly_event
+    physicalType: topic
+    physicalName: events
+    description: One record per detected anomaly event.
+    properties:
+
+      - id: ae_event_id
+        name: event_id
+        businessName: Unique event identifier
+        logicalType: string
+        logicalTypeOptions:
+          format: uuid
+        physicalType: UUID
+        required: true
+        primaryKey: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: duplicateValues
+            mustBe: 0
+
+      - id: ae_timestamp_utc
+        name: timestamp_utc
+        businessName: Event detection timestamp (UTC)
+        logicalType: string
+        logicalTypeOptions:
+          format: date-time
+        physicalType: TIMESTAMP WITH TIME ZONE
+        required: true
+        description: UTC timestamp of the telemetry tick that triggered this event.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: ae_anomaly_type
+        name: anomaly_type
+        businessName: Anomaly type code
+        logicalType: string
+        physicalType: VARCHAR(40)
+        required: true
+        description: >
+          Structured code identifying the anomaly class. Codes map to the taxonomy
+          in anomaly_detection.py. Format: {subsystem}_{index}_{short_name}.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues:
+                - CONTRACT_VIOLATION
+                - T1_THERMAL_RUNAWAY
+                - T2_UNEXPECTED_HEATER
+                - T3_RADIATOR_DEGRADATION
+                - T4_COATING_DARKENING
+                - P1_UNEXPECTED_SOC_DROP
+                - P2_ARRAY_UNDERPERFORMANCE
+                - P3_LOAD_SPIKE
+                - P4_VOLTAGE_SOC_MISMATCH
+                - C1_LINK_UNEXPLAINED_DROP
+                - C2_SEP_SCINTILLATION_MISS
+                - C3_ANTENNA_ANOMALY
+                - R1_UNDETECTED_SEP
+                - R2_BELT_MODEL_DEVIATION
+                - R3_DEGRADATION_ACCELERATION
+                - X1_THERMAL_POWER_DECOUPLED
+                - X2_STATE_INCONSISTENCY
+                - X3_COMMS_POWER_DECOUPLED
+                - ML_ISOLATION_FOREST
+                - ML_SEQUENCE_ANOMALY
+
+      - id: ae_layer
+        name: detection_layer
+        businessName: Detection layer (1=contract, 2=rules, 3=ml)
+        logicalType: integer
+        physicalType: SMALLINT
+        required: true
+        description: >
+          1 = Contract violation (hard physical impossibility — reject data).
+          2 = Rule-based physics anomaly (valid data, unexpected behaviour).
+          3 = ML model anomaly (learned pattern, requires human review).
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [1, 2, 3]
+
+      - id: ae_severity
+        name: severity
+        businessName: Anomaly severity
+        logicalType: string
+        physicalType: VARCHAR(10)
+        required: true
+        description: >
+          CRITICAL: contract violation or imminent hardware failure threshold.
+          ALERT: clear anomaly requiring prompt investigation.
+          WARNING: unusual pattern, investigate at next convenient window.
+          INFO: ML model flagged, low confidence, log for batch review.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [CRITICAL, ALERT, WARNING, INFO]
+          - type: text
+            description: >
+              Layer 1 events must always be CRITICAL.
+              Layer 2 events may be WARNING, ALERT, or CRITICAL.
+              Layer 3 (ML) events must not be CRITICAL without Layer 2 confirmation.
+              A CRITICAL severity ML event with no corresponding Layer 2 event
+              indicates a misconfigured ML threshold.
+
+      - id: ae_description
+        name: description
+        businessName: Human-readable anomaly description
+        logicalType: string
+        physicalType: TEXT
+        required: true
+        description: Free-text description for operators. Must include the specific field values.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: ae_field_name
+        name: field_name
+        businessName: Primary field that triggered the anomaly
+        logicalType: string
+        physicalType: VARCHAR(60)
+        required: true
+        description: >
+          The specific telemetry field name as defined in the producing model's
+          ODCS contract. Must match an existing field in one of the four model contracts.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: ae_field_value
+        name: field_value
+        businessName: Value of the triggering field
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: ae_expected_value
+        name: expected_value
+        businessName: Physics-baseline expected value
+        logicalType: number
+        physicalType: DOUBLE
+        required: false
+        description: >
+          For Layer 2 anomalies: the value predicted by the physics baseline model.
+          For Layer 1: the contract bound that was violated.
+          Null for ML anomalies where no single expected value exists.
+
+      - id: ae_residual
+        name: residual
+        businessName: Actual minus expected (anomaly signal magnitude)
+        logicalType: number
+        physicalType: DOUBLE
+        required: false
+        description: >
+          field_value − expected_value. The primary anomaly signal for Layer 2.
+          Positive residual = above expected. Negative = below expected.
+          For normalised features (0–1 range), residuals > 0.1 typically warrant attention.
+
+      - id: ae_contract_reference
+        name: contract_reference
+        businessName: ODCS contract file and quality rule that was approached or violated
+        logicalType: string
+        physicalType: VARCHAR(120)
+        required: true
+        description: >
+          Points operators directly to the relevant ODCS contract quality rule.
+          Format: "{filename} > {field_id} [{quality_rule_description}]"
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: ae_suggested_cause
+        name: suggested_cause
+        businessName: Most likely physical explanation
+        logicalType: string
+        physicalType: TEXT
+        required: true
+        description: >
+          Short text describing the most likely root cause, drawn from the
+          anomaly taxonomy in anomaly_detection.py. Used to guide operator
+          investigation without requiring deep physics knowledge.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: ae_r_RE
+        name: r_RE
+        businessName: Spacecraft position in Earth radii at event time
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Context field. Critical for interpreting radiation and thermal anomalies —
+          belt zone (r/RE) determines the expected baseline dose rate and thermal load.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be > 1.0 (spacecraft cannot be inside Earth).
+              For Artemis II: valid range 1.03 ≤ r_RE ≤ 68.
+
+      - id: ae_mission_phase
+        name: mission_phase
+        businessName: Mission phase at event time
+        logicalType: string
+        physicalType: VARCHAR(20)
+        required: true
+        description: >
+          Context field. Many anomaly types are expected during specific phases
+          (e.g., heater activation during eclipse is normal, during cruise is anomalous).
+          Consumers must gate alerts on mission_phase.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues:
+                [PRELAUNCH, ASCENT, LEO, TRANS_LUNAR, LUNAR_FLYBY,
+                 TRANS_EARTH, ENTRY, RECOVERY, UNKNOWN]
+
+      - id: ae_ml_anomaly_score
+        name: ml_anomaly_score
+        businessName: ML model anomaly score (0–1, higher = more anomalous)
+        logicalType: number
+        physicalType: DOUBLE
+        required: false
+        description: >
+          Populated only for Layer 3 (ML) events.
+          Null for Layer 1 and Layer 2 events (rule-based, no score needed).
+        quality:
+          - type: text
+            description: >
+              When populated: 0.0 ≤ ml_anomaly_score ≤ 1.0.
+              Threshold for Layer 3 event generation: typically 0.85 (configurable).
+              Values above 1.0 indicate a model output normalisation error.
+
+---
+apiVersion: v3.1.0
+kind: DataContract
+id: 9b1c3d5e-7f8a-4b9c-1d2e-3f4a5b6c7d8e
+name: ml_feature_vectors
+version: 1.1.0
+status: active
+domain: spacecraft_digital_twin
+
+description:
+  purpose: >
+    Contract for the ML training and inference feature vectors derived from
+    validated telemetry packets. These features are the input to anomaly
+    detection models (Isolation Forest, LSTM autoencoder, or similar).
+
+    Contract-informed ML design principles applied here:
+      1. Where a source contract provides a validated numerical domain, that domain
+         may be used for normalisation. Where a source contract is UNVERIFIED, the
+         normalisation range must be explicitly declared as a MODEL_ASSUMPTION and
+         must not be presented as a physics limit.
+      2. Residual features are physically grounded — zero means "matches
+         physics expectation", not "matches historical average."
+      3. Feature schema is versioned independently from the telemetry schema —
+         feature engineering changes do not require telemetry contract changes.
+      4. The contract separates raw normalised features (what the laws of physics
+         constrain) from rate/residual features (what the specific model physics
+         predicts), making the feature space interpretable.
+
+  limitations: >
+    Features are computed per-tick. Sequence models (LSTM) window over N ticks;
+    this contract covers the per-tick feature vector, not the windowed input tensor.
+    Rate features require a previous tick — first tick of a session has zeros.
+
+team:
+  - username: ${DATA_PRODUCT_OWNER}
+    role: Data Product Owner
+    description: Configured at deployment
+
+servers:
+  - server: ${KAFKA_ML_SERVER}
+    environment: production
+    type: kafka
+    host: ${KAFKA_BOOTSTRAP_SERVERS}
+    topic: ${KAFKA_ML_FEATURES_TOPIC}
+  - server: ${OBJECT_STORAGE_TRAINING_SERVER}
+    environment: training
+    type: object_storage
+    description: Parquet files for ML training batches
+
+schema:
+  - id: ml_feature_vector
+    name: ml_feature_vector
+    physicalType: topic
+    physicalName: ml_features
+    description: >
+      One record per validated telemetry tick. All features are normalised to [0,1]
+      or centred at 0 using physics-contract bounds as the normalisation range.
+    properties:
+
+      - id: ml_timestamp_utc
+        name: timestamp_utc
+        logicalType: string
+        logicalTypeOptions:
+          format: date-time
+        physicalType: TIMESTAMP WITH TIME ZONE
+        required: true
+        primaryKey: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      # ── Raw normalised features ──
+      # Normalisation: (value - contract_min) / (contract_max - contract_min)
+      # Source contracts noted in description for each field.
+
+      - id: ml_temp_elec_norm
+        name: temp_elec_norm
+        businessName: Electronics bay temperature, normalised
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          Normalisation using the currently configured electronics reference range.
+          The previous [249,310] K range is not an established Orion-bay contract bound;
+          if retained for ML scaling it is MODEL_ASSUMPTION, not a hardware limit.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: Must be in [0.0, 1.0] when the configured normalization envelope is used. Values outside indicate contract bound violation at source.
+
+      - id: ml_temp_sun_norm
+        name: temp_sun_norm
+        businessName: Sun-face temperature, normalised
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          (temp_sun_face_K − t_min) / (t_max − t_min), where t_min/t_max are a
+          configured normalization envelope. The [3, 450] K range attributed to
+          02_thermal_model is NOT ESTABLISHED BY SUPPLIED SOURCES for this review
+          — the 02_thermal_model contract was not available to verify this claim,
+          and it is not corroborated elsewhere. This must be treated as an
+          unverified MODEL_ASSUMPTION, matching the telemetry_packet contract's
+          own disclaimer that no 450 K ceiling is asserted for this field, until
+          02_thermal_model is supplied and checked.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: Must be in [0.0, 1.0] when the configured normalization envelope is used.
+
+      - id: ml_temp_shadow_norm
+        name: temp_shadow_norm
+        businessName: Shadow-face temperature, normalised
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          (temp_shadow_face_K − t_min) / (t_max − t_min), where t_min/t_max are a
+          configured normalization envelope. The [3, 350] K range attributed to
+          02_thermal_model is NOT ESTABLISHED BY SUPPLIED SOURCES for this review
+          — the 02_thermal_model contract was not available to verify this claim,
+          and it is not corroborated elsewhere. This must be treated as an
+          unverified MODEL_ASSUMPTION, matching the telemetry_packet contract's
+          own disclaimer that no 350 K ceiling is asserted for this field, until
+          02_thermal_model is supplied and checked.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: Must be in [0.0, 1.0] when the configured normalization envelope is used.
+
+      - id: ml_soc_norm
+        name: soc_norm
+        businessName: Battery state of charge, normalised
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: "battery_soc_pct / 100. Range from 03_power: [0, 100] %."
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: Must be in [0.0, 1.0] when the configured normalization envelope is used. Li-ion chemistry is the hard constraint, not the model.
+
+      - id: ml_voltage_norm
+        name: voltage_norm
+        businessName: Battery voltage, normalised
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          (battery_voltage_V − v_min) / (v_max − v_min), where v_min/v_max are a
+          configured normalization envelope. The audited power_model_output
+          contract does not establish a 24–32 V Orion hardware bound, so
+          [24, 32] V — if used — is a MODEL_ASSUMPTION for ML scaling purposes
+          only, not a hardware limit, and must be explicitly configurable rather
+          than hard-coded.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be in [0.0, 1.0] when the configured normalization envelope is
+              used. Values outside this range indicate the configured envelope
+              does not cover the observed voltage, not a physics violation.
+
+      - id: ml_signal_quality
+        name: signal_quality
+        businessName: Signal quality index (already normalised)
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: "signal_quality ∈ [0,1] directly from 03_comms. No further normalisation needed."
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: Must be in [0.0, 1.0] when the configured normalization envelope is used.
+
+      - id: ml_dose_rate_norm
+        name: dose_rate_norm
+        businessName: Radiation dose rate, normalised
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          radiation_dose_rate_mrad_hr / dose_rate_ceiling, where dose_rate_ceiling
+          is a configured normalization constant. The audited radiation_model_output
+          contract explicitly asserts no fixed physical ceiling for
+          radiation_dose_rate_mrad_hr, so 36,000 mrad/hr — if used — is a
+          MODEL_ASSUMPTION for ML scaling purposes only, not a physics or hardware
+          bound, and must be explicitly configurable rather than hard-coded.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be ≥ 0.0 when the configured normalization envelope is used.
+              Values above 1.0 indicate the configured ceiling was exceeded, not
+              a physics violation, since no universal ceiling is established.
+
+      # ── Context features ──
+
+      - id: ml_r_RE_norm
+        name: r_RE_norm
+        businessName: Earth radii distance, normalised
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          (r_RE − 1.0) / (68.0 − 1.0), using the same upper bound (68) as the
+          ae_r_RE valid-range check in the anomaly_event schema, so the two
+          fields stay consistent. Previously this field used 70.0 while
+          ae_r_RE used 68 — an internal inconsistency that has been reconciled
+          here. Neither the 1.0 lower bound nor the 68.0 upper bound for
+          Artemis II cislunar range is established by the supplied sources for
+          this review; both remain a MODEL_ASSUMPTION / configured envelope,
+          not an AP-8/AE-8 physical bound, until an authoritative Artemis II
+          trajectory range is supplied.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              This feature is [0,1] only within its configured normalization envelope.
+              The envelope is a MODEL_ASSUMPTION, not an AP-8/AE-8 physical bound.
+
+      - id: ml_earth_dist_norm
+        name: earth_dist_norm
+        businessName: Earth distance, normalised
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: "(earth_distance_km − 6500) / (410000 − 6500). Artemis II operational range."
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: Must be in [0.0, 1.0] when the configured normalization envelope is used.
+
+      - id: ml_eclipse_fraction
+        name: eclipse_fraction
+        businessName: Eclipse fraction (0=sunlit, 1=full shadow)
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: "Must be in [0.0, 1.0]. Source contract: 01_state_engine."
+
+      - id: ml_in_belt
+        name: in_belt
+        businessName: In Van Allen belt (binary context flag)
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          1.0 if the selected radiation environment model classifies the spacecraft as
+          within its trapped-particle domain; 0.0 otherwise. Do not hard-code radial belt
+          boundaries as AP-8/AE-8 parameters [Source #5].
+          Critical context for radiation anomaly interpretation:
+          dose rate spikes in belt are different anomalies from spikes in interplanetary space.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [0.0, 1.0]
+
+      - id: ml_sep_active
+        name: sep_active
+        businessName: SEP event active flag (binary)
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          1.0 if sep_event_active = True under the configured NOAA/space-weather threshold.
+          This is the most important context flag for radiation anomaly detection:
+          a high dose_rate_ratio with sep_active=0 is R1 anomaly;
+          the same ratio with sep_active=1 is expected behaviour.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [0.0, 1.0]
+
+      - id: ml_dsn_visible
+        name: dsn_visible
+        businessName: DSN line-of-sight available (binary)
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [0.0, 1.0]
+
+      # ── Physics residual features ──
+      # These are the key anomaly signals. Zero = matches physics expectation.
+      # The ML model learns the distribution of these residuals during normal ops.
+
+      - id: ml_temp_sun_residual_K
+        name: temp_sun_residual_K
+        businessName: Sun-face temperature residual vs Stefan-Boltzmann equilibrium (K)
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          temp_sun_face_K minus a configured thermal equilibrium reference computed
+          from solar flux, optical properties, geometry and environment. This is a
+          model residual, not a universal physics bound.
+          Positive = surface hotter than equilibrium (coating darkening, insulation failure).
+          Negative = surface cooler than equilibrium (unexpected heat path to space).
+          Only meaningful when eclipse_fraction < 0.1.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              ±20 K and ±40 K are anomaly-detection heuristics, not physics limits.
+              Keep them configurable and do not use them as contract validity bounds.
+
+      - id: ml_link_margin_residual_dB
+        name: link_margin_residual_dB
+        businessName: Link margin residual vs Friis prediction (dB)
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          link_margin_dB − expected_link_margin(earth_distance_km, eirp_dBW).
+          Zero = link exactly as predicted by free-space propagation physics.
+          Positive = better link than expected (unusual atmospheric conditions).
+          Negative = worse link than expected (antenna anomaly, scintillation, interference).
+          Only meaningful when dsn_visible = 1.0.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              ±2 dB and −5 dB are configurable anomaly heuristics, not physics bounds.
+              Link residuals must use the configuration-specific link budget.
+
+      - id: ml_array_efficiency_ratio
+        name: array_efficiency_ratio
+        businessName: Actual vs expected solar array output ratio
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          solar_array_power_W / expected_array_power(solar_flux, eclipse, efficiency, gimbal).
+          1.0 = array performing exactly as physics predicts.
+          < 0.85 → P2 anomaly candidate (underperformance).
+          > 1.05 → impossible without model error (cannot exceed physics prediction).
+          Only meaningful when eclipse_fraction < 0.1.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Ratio must be ≥ 0. Thresholds for underperformance and model mismatch are
+              configurable. A ratio >1 is not physically impossible by itself because the
+              expected-output model may be conservative or incomplete.
+
+      - id: ml_voltage_residual_V
+        name: voltage_residual_V
+        businessName: Battery voltage residual vs SoC model (V)
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          battery_voltage_V minus the configured battery V-SoC reference model.
+          The prior linear equation is a model approximation, not Li-ion chemistry.
+          Positive = overvoltage for given SoC (hot battery, calibration drift).
+          Negative = undervoltage for given SoC (cold battery, cell degradation).
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Expected normal range: ±0.5 V (temperature effects on V-SoC curve).
+              Values outside ±1.5 V → P4 anomaly candidate.
+
+      - id: ml_dose_rate_ratio
+        name: dose_rate_ratio
+        businessName: Actual vs expected belt-model dose rate ratio
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          radiation_dose_rate_mrad_hr / expected_dose_rate(r_RE).
+          1.0 = dose rate matches the configured radiation-environment baseline.
+          Thresholds for R1/R2 are anomaly heuristics and must not be treated as AP-8/AE-8
+          validity bounds.
+          Meaningful at all positions (near-zero belt rate in interplanetary space
+          means even small absolute increases produce large ratios — use absolute
+          dose_rate_norm alongside this field to avoid false positives).
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be ≥ 0. Values < 0 are impossible (dose rate cannot be negative).
+              In interplanetary space (r_RE > 5.5), the denominator approaches a GCR
+              background level. The commonly cited illustrative figure of ~0.4 mrad/hr
+              is NOT ESTABLISHED BY SUPPLIED SOURCES for this review and must not be
+              treated as an authoritative GCR value; it is at most a configurable
+              placeholder pending a sourced GCR reference. Large ratios in this regime
+              require verification against the absolute dose value regardless of which
+              background figure is configured.
+
+      # ── Rate-of-change features ──
+
+      - id: ml_temp_elec_rate_K_min
+        name: temp_elec_rate_K_min
+        businessName: Electronics temperature rate of change (K/min)
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          (temp_electronics_bay_K[t] − temp_electronics_bay_K[t−1]) / dt × 60.
+          Zero = stable temperature.
+          > 0.3 K/min sustained → T1 thermal runaway candidate.
+          < −0.5 K/min in sunlit conditions → unexpected cooling anomaly.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Rate limits must be derived from the configured thermal capacitance and
+              heat-flow inputs. The previous 80 kg/800 J kg−1 K−1 calculation was an
+              unsupported assumption and is removed as a physical bound.
+
+      - id: ml_soc_rate_pct_hr
+        name: soc_rate_pct_hr
+        businessName: Battery SoC rate of change (%/hr)
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          (soc[t] − soc[t−1]) / dt × 3600.
+          During sunlit cruise: should be slightly positive (array surplus).
+          Any expected rate and anomaly threshold must be calculated from the configured
+          battery capacity, voltage/current limits and load model; the previous 3,000 Wh,
+          −67 %/hr and −80 %/hr values were unsupported.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              No hard SoC-rate bounds are asserted here. Derive rate from the validated
+              battery capacity and power-flow model. Any anomaly thresholds are MODEL_ASSUMPTIONS
+              and must not be described as physically impossible without hardware limits.
+
+      - id: ml_dose_rate_delta_mrad_hr
+        name: dose_rate_delta_mrad_hr
+        businessName: Dose rate change between ticks (mrad/hr)
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          Absolute change in dose rate. Large positive spikes without belt transit
+          or SEP flag → R1 undetected particle event. Combines with dose_rate_ratio.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: ml_signal_quality_delta
+        name: signal_quality_delta
+        businessName: Signal quality change between ticks
+        logicalType: number
+        physicalType: FLOAT
+        required: true
+        description: >
+          signal_quality[t] − signal_quality[t−1].
+          Sudden drops (< −0.3) without distance change → C1 or C2 anomaly candidate.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Bounded by signal_quality range: [−1.0, +1.0].
+              Values outside this range indicate a source data error in signal_quality.

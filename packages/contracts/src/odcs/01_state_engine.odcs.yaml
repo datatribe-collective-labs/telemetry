@@ -1,0 +1,357 @@
+apiVersion: v3.1.0
+kind: DataContract
+id: 7f3a1c2e-4b8d-4e9f-a0c1-2d3e4f5a6b7c
+name: state_engine_snapshot
+version: 1.1.0
+status: active
+domain: spacecraft_digital_twin
+
+description:
+  purpose: >
+    Authoritative per-tick state of the Artemis II Orion spacecraft derived from
+    JPL Horizons ephemeris (-1024), NASA OEM files, and AROW attitude telemetry.
+    Published to Kafka topic `trajectory` at ~1-second cadence during live ops
+    and at OEM cadence (4 min nominal, 60 s during maneuvers) for replay.
+    This is the primary input to all four physics models. Every downstream
+    consumer must treat these values as immutable facts for a given tick.
+  limitations: >
+    OEM data begins at ICPS separation (~T+3.5h after launch). No state vectors
+    exist for the ascent phase. Eclipse state uses a cylindrical shadow model
+    (no penumbra). Attitude fields are placeholders when AROW is unavailable.
+  authoritativeDefinitions:
+    - url: https://ssd.jpl.nasa.gov/horizons/
+      type: businessDefinition
+      description: "[Source #3 / External primary] JPL Horizons ephemeris source, spacecraft ID -1024."
+    - url: https://www.nasa.gov/artemis/
+      type: businessDefinition
+      description: NASA Artemis II mission reference
+
+team:
+  - username: ${DATA_PRODUCT_OWNER}
+    role: Data Product Owner
+    description: Configured at deployment
+
+servers:
+  - server: ${KAFKA_PRODUCTION_SERVER}
+    environment: production
+    type: kafka
+    host: ${KAFKA_BOOTSTRAP_SERVERS}
+    topic: ${KAFKA_TRAJECTORY_TOPIC}
+  - server: ${KAFKA_REPLAY_SERVER}
+    environment: replay
+    type: kafka
+    host: ${KAFKA_BOOTSTRAP_SERVERS}
+    topic: ${KAFKA_TRAJECTORY_REPLAY_TOPIC}
+
+slaProperties:
+  - property: latency
+    value: 2
+    unit: s
+    description: Maximum delay from AROW/Horizons ingestion to Kafka publish
+  - property: frequency
+    value: 1
+    unit: s
+    description: Nominal tick cadence during live streaming
+  - property: availability
+    value: 99.5
+    unit: percent
+
+schema:
+  - id: state_snapshot
+    name: state_snapshot
+    physicalType: topic
+    physicalName: trajectory
+    description: >
+      One state vector per spacecraft tick. Geocentric EME2000 / J2000 frame.
+      Units follow CCSDS OEM convention: km and km/s.
+    dataGranularityDescription: One record per simulation tick (1 s live, 240 s OEM replay)
+    properties:
+
+      - id: timestamp_utc
+        name: timestamp_utc
+        businessName: Tick timestamp (UTC)
+        logicalType: string
+        logicalTypeOptions:
+          format: date-time
+        physicalType: TIMESTAMP WITH TIME ZONE
+        required: true
+        primaryKey: true
+        description: >
+          ISO 8601 UTC timestamp of this state vector. Monotonically increasing.
+          Derived from OEM file timestamps (UTC) or AROW stream.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: Must be monotonically increasing within a single mission replay session.
+
+      - id: x_km
+        name: x_km
+        businessName: Position X (geocentric, km)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: X component of geocentric position in EME2000 frame, km.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be finite. At Artemis II max Earth distance (406,773 km),
+              |x|² + |y|² + |z|² ≤ (410,000)² km². No constraint on sign.
+
+      - id: y_km
+        name: y_km
+        businessName: Position Y (geocentric, km)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: Y component of geocentric position in EME2000 frame, km.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: z_km
+        name: z_km
+        businessName: Position Z (geocentric, km)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: Z component of geocentric position in EME2000 frame, km.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: vx_kms
+        name: vx_kms
+        businessName: Velocity X (km/s)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: X component of geocentric velocity in EME2000 frame, km/s.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Scalar speed (√vx²+vy²+vz²) must be ≥ 0 km/s.
+              Maximum observed during Artemis II re-entry: ~10.97 km/s (~39,490 km/h).
+              Values above 12 km/s are physically implausible for Orion in cislunar space.
+
+      - id: vy_kms
+        name: vy_kms
+        businessName: Velocity Y (km/s)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: vz_kms
+        name: vz_kms
+        businessName: Velocity Z (km/s)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: distance_from_sun_au
+        name: distance_from_sun_au
+        businessName: Heliocentric distance (AU)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Distance from Sun to spacecraft in AU (1 AU = 149,597,870.7 km).
+          Derived from heliocentric Horizons query (center 500@10).
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: library
+            metric: invalidValues
+            description: Must be within cislunar range
+            arguments:
+              pattern: "^[0-9]+(\\.[0-9]+)?$"
+          - type: text
+            description: >
+              For Artemis II mission window (April 2026), Earth is at ~0.9986 AU from Sun.
+              Spacecraft offset from Earth is ≤ 0.003 AU.
+              Valid range: 0.995 ≤ distance_from_sun_au ≤ 1.005.
+              Values outside this range indicate a data source error.
+
+      - id: solar_flux_W_m2
+        name: solar_flux_W_m2
+        businessName: Solar flux at spacecraft (W/m²)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Solar irradiance at spacecraft position. Computed as 1361 / r_au².
+          The solar constant (1361 W/m²) is the IAU 2015 value.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              At 1 AU: 1361 W/m². For Artemis II range (0.995–1.005 AU):
+              valid range is 1347 ≤ solar_flux_W_m2 ≤ 1375.
+              Any value outside this range cannot be derived from a physically
+              correct heliocentric distance.
+
+      - id: solar_incidence_angle_deg
+        name: solar_incidence_angle_deg
+        businessName: Solar incidence angle (degrees)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Angle between Sun vector and spacecraft +Z body axis.
+          0° = arrays directly facing Sun (maximum power).
+          90° = arrays edge-on to Sun (zero direct illumination).
+          Source: AROW solar_array_wing angles when available; 0° placeholder otherwise.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Physical constraint: 0 ≤ solar_incidence_angle_deg ≤ 180.
+              Values outside [0, 180] violate the definition of an angle between vectors.
+
+      - id: eclipse_state
+        name: eclipse_state
+        businessName: Eclipse state
+        logicalType: string
+        physicalType: VARCHAR(10)
+        required: true
+        description: Shadow condition. SUNLIT = no shadow. UMBRA = full Earth shadow.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [SUNLIT, UMBRA, PENUMBRA]
+          - type: text
+            description: >
+              Derived from cylindrical shadow model using OEM position vectors.
+              For Artemis II, exactly one eclipse event was detected: MET 25.7h–26.7h
+              (64 minutes, during HEO perigee prior to TLI burn).
+              Producers must not emit values other than SUNLIT, UMBRA, or PENUMBRA.
+
+      - id: eclipse_fraction
+        name: eclipse_fraction
+        businessName: Eclipse fraction (0–1)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          0.0 = fully sunlit. 1.0 = full umbra.
+          Intermediate values only when eclipse_state = PENUMBRA.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must satisfy: 0.0 ≤ eclipse_fraction ≤ 1.0.
+              When eclipse_state = SUNLIT, eclipse_fraction must be 0.0.
+              When eclipse_state = UMBRA, eclipse_fraction must be 1.0.
+              Inconsistency between these two fields is a data quality failure.
+
+      - id: earth_distance_km
+        name: earth_distance_km
+        businessName: Earth distance (km)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: Scalar Earth-to-spacecraft distance in km. Derived from OEM range (RG column).
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be > 0. Must be consistent with position vector:
+              |earth_distance_km - √(x²+y²+z²)| < 1 km.
+              For Artemis II: minimum ~6,363 km (surface + LEO altitude),
+              maximum observed 413,144 km (from OEM, post-splashdown arc).
+              Operationally relevant range: 6,500 ≤ earth_distance_km ≤ 410,000.
+
+      - id: dsn_visibility
+        name: dsn_visibility
+        businessName: DSN line-of-sight available
+        logicalType: boolean
+        physicalType: BOOLEAN
+        required: true
+        description: >
+          True if at least one DSN complex (Goldstone, Canberra, Madrid) has
+          the spacecraft above its 10° elevation cutoff. Derived from Horizons
+          observer ephemeris query per site.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: light_time_s
+        name: light_time_s
+        businessName: One-way light time (seconds)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          One-way signal travel time from spacecraft to Earth centre, seconds.
+          Computed as earth_distance_km × 1000 / 299,792,458 m/s.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must satisfy: |light_time_s - earth_distance_km × 1000 / 299792458| < 0.01 s.
+              Physical bounds for Artemis II: 0.02 s (LEO) to 1.38 s (max Earth distance).
+              Round-trip communications delay = 2 × light_time_s.
+
+      - id: solar_array_angle_deg
+        name: solar_array_angle_deg
+        businessName: Solar array gimbal offset (degrees)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Mean gimbal offset of the four Orion ESM solar array wings from optimal
+          Sun-tracking position. 0° = fully tracking. From AROW SAW 1–4 fields.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Physical constraint: 0 ≤ solar_array_angle_deg ≤ 180.
+              The array cannot point more than 180° away from the Sun.
+
+      - id: roll_deg
+        name: roll_deg
+        businessName: Spacecraft roll (degrees)
+        logicalType: number
+        physicalType: DOUBLE
+        required: false
+        description: Spacecraft roll in body frame, degrees. Source AROW telemetry.
+        quality:
+          - type: text
+            description: >
+              Valid range: −180 ≤ roll_deg ≤ 180 (or 0–360 depending on convention).
+              Null is acceptable when AROW attitude is unavailable.
+
+      - id: pitch_deg
+        name: pitch_deg
+        businessName: Spacecraft pitch (degrees)
+        logicalType: number
+        physicalType: DOUBLE
+        required: false
+        description: Spacecraft pitch in body frame, degrees. Source AROW telemetry.
+
+      - id: yaw_deg
+        name: yaw_deg
+        businessName: Spacecraft yaw (degrees)
+        logicalType: number
+        physicalType: DOUBLE
+        required: false
+        description: Spacecraft yaw in body frame, degrees. Source AROW telemetry.

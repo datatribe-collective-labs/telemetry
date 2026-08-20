@@ -1,0 +1,249 @@
+apiVersion: v3.1.0
+kind: DataContract
+id: 2a4b6c8d-0e1f-4a2b-8c3d-4e5f6a7b8c9d
+name: thermal_model_output
+version: 1.1.0
+status: active
+domain: spacecraft_digital_twin
+
+description:
+  purpose: >
+    Three-node lumped-parameter thermal model output for Orion / Artemis II.
+    Nodes: sun-facing surface (outer panel / MLI exterior), shadow-facing surface
+    (anti-sun face / radiator), electronics bay (avionics + battery).
+    Published to Kafka topic `telemetry` at each simulation tick.
+    Hard constraints are limited to relationships supported by the declared inputs
+    and source material. Vehicle-specific temperature qualification limits are not
+    inferred from generic SLS flight-computer data.
+  limitations: >
+    Three-node lumped model — not a finite-element thermal analysis.
+    Shadow face temperatures can legitimately fall below the electronics cold limit;
+    each node has its own operational bounds. Heater setpoint is −5°C.
+  authoritativeDefinitions:
+    - url: https://doi.org/10.1002/9781119971009
+      type: businessDefinition
+      description: "[Source #1] Fortescue et al., Spacecraft Systems Engineering 4th ed., Ch. 11 (Savage) — general thermal-control methodology."
+    - url: https://www.nasa.gov/
+      type: businessDefinition
+      description: "[Source #12] SLS Reference Guide for Artemis II, p.38 — SLS flight-computer reference only; not an Orion-bay qualification limit."
+
+team:
+  - username: ${DATA_PRODUCT_OWNER}
+    role: Data Product Owner
+    description: Configured at deployment
+
+servers:
+  - server: ${KAFKA_PRODUCTION_SERVER}
+    environment: production
+    type: kafka
+    host: ${KAFKA_BOOTSTRAP_SERVERS}
+    topic: ${KAFKA_TELEMETRY_TOPIC}
+
+schema:
+  - id: thermal_output
+    name: thermal_output
+    physicalType: topic
+    physicalName: telemetry
+    description: Thermal model output fields within the telemetry Kafka message.
+    properties:
+
+      - id: th_timestamp_utc
+        name: timestamp_utc
+        logicalType: string
+        logicalTypeOptions:
+          format: date-time
+        physicalType: TIMESTAMP WITH TIME ZONE
+        required: true
+        primaryKey: true
+        description: Tick timestamp. Must match state_snapshot.timestamp_utc exactly.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: temp_sun_face_K
+        name: temp_sun_face_K
+        businessName: Sun-facing surface temperature (K)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Temperature of the sun-facing outer panel / MLI exterior node.
+          Governed by Stefan-Boltzmann radiative balance:
+          Q_absorbed = ε·σ·A·T⁴ at equilibrium.
+          Solar cell absorptivity α ≈ 0.92 drives strong solar heating.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Physical lower bound: 3 K (deep space CMB sink temperature).
+              Physical upper bound: ~450 K — beyond this MLI outer-face coatings
+              fail structurally. At 1 AU with α=0.92, equilibrium ≈ 390–420 K.
+              No hard 450 K upper bound is asserted.
+              Values below 3 K violate thermodynamic law.
+              Values above 450 K indicate model runaway or missing radiative term.
+
+      - id: temp_shadow_face_K
+        name: temp_shadow_face_K
+        businessName: Shadow-facing surface temperature (K)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Temperature of the anti-sun face / dedicated radiator node.
+          OSR (optical solar reflector) coating: α ≈ 0.15, ε ≈ 0.80.
+          No direct solar input; radiates to 3 K space sink.
+          In eclipse, converges toward ~150–180 K.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Physical lower bound: 3 K (space sink).
+              Physical upper bound: cannot exceed temp_sun_face_K by more than
+              the conduction capacity between nodes (conductance ≈ 0.2 W/K).
+              Practical operating range: 100 ≤ temp_shadow_face_K ≤ 350 K.
+              Values below 100 K are physically possible in deep shadow but indicate
+              a very cold transient; below 3 K is impossible.
+
+      - id: temp_electronics_bay_K
+        name: temp_electronics_bay_K
+        businessName: Electronics bay temperature (K)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        criticalDataElement: true
+        description: >
+          Temperature of the avionics / battery internal bay node.
+          [Source #12] establishes an SLS flight-computer operating range of −24°C
+          to +36.5°C, but does not by itself establish an Orion electronics-bay
+          qualification range. The supplied sources also do not establish the
+          268 K heater setpoint. Both remain reference/assumption data unless a
+          vehicle-specific Orion source is added.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Hard operational bounds from SLS flight computer spec (p.38):
+                Cold survival limit: 249 K (−24°C) — below this avionics fail.
+                Hot operating limit: 310 K (+37°C) — above this avionics overheat.
+              No hard 249–310 K Orion-bay bound is asserted.
+              Values outside this range represent a mission-critical anomaly.
+              The contract cannot be relaxed to fit a model that violates these limits —
+              the limits come from hardware, not from this simulation.
+
+      - id: q_solar_absorbed_W
+        name: q_solar_absorbed_W
+        businessName: Solar flux absorbed by sun-face node (W)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Q_solar = φ_sun × A × α × cos(θ) × illumination_factor.
+          Zero during UMBRA eclipse. Maximum at 1 AU, α=0.92, A=4 m², θ=0°:
+          1361 × 4 × 0.92 × 1.0 = ~5,009 W.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be ≥ 0 (cannot absorb negative solar energy).
+              Must be 0.0 when eclipse_state = UMBRA (no solar flux in shadow).
+              No hard numerical upper bound is asserted because the supplied sources
+              do not establish the modeled radiating/absorbing area and optical properties.
+              Enforce the input-derived equation instead [Source #2].
+
+      - id: q_radiated_W
+        name: q_radiated_W
+        businessName: Total radiative heat rejection (W)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Sum of radiative losses from sun-face and shadow-face nodes to the modeled
+          radiative environment. Q_rad = ε·σ·A·F·(T⁴ − T_env⁴). View factors,
+          emissivity, area and T_env are model inputs; they must not be collapsed into
+          an unsupported fixed bound [Source #1, Source #9].
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be ≥ 0. If a radiating node has T > T_env with positive ε, A and F,
+              its radiative contribution is > 0. At steady state the summed energy
+              balance must close; do not require q_radiated = q_solar + q_internal
+              during transients [Source #1].
+
+      - id: q_internal_W
+        name: q_internal_W
+        businessName: Internal power dissipation (W)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Waste heat from electronics bay (from power model) plus SEP particle heating.
+          Sourced from CrossModelState.power_dissipation_W on the previous tick.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be ≥ 0. No authoritative 50–500 W or 5,000 W Orion bound was
+              established from the supplied sources; classify any such engineering
+              limit as MODEL_ASSUMPTION until an EPS/thermal power budget is supplied.
+
+      - id: heater_active
+        name: heater_active
+        businessName: Survival heater active
+        logicalType: boolean
+        physicalType: BOOLEAN
+        required: true
+        description: >
+          Heater command state. The 268 K setpoint and 25 W rating are MODEL_ASSUMPTION
+          values unless a vehicle-specific Orion heater specification is supplied.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              If a controller configuration declares T_on/T_off, heater_active must
+              obey that hysteresis. Do not hard-code 268 K or infer a heater command
+              from an unverified electronics-bay limit [External: Orion heater/control specification].
+
+      - id: heater_power_W
+        name: heater_power_W
+        businessName: Heater power draw (W)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: Electrical power consumed by survival heater. 25 W when active, 0 W otherwise.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be 0 when inactive and equal to the configured heater rated power
+              when active. The current 25 W value is not source-verified.
+
+      - id: thermal_state
+        name: thermal_state
+        businessName: Thermal health state
+        logicalType: string
+        physicalType: VARCHAR(20)
+        required: true
+        criticalDataElement: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [NOMINAL, COLD_SURVIVAL, HOT_LIMIT]
+          - type: text
+            description: >
+              NOMINAL: all nodes within operational limits.
+              COLD_SURVIVAL: electronics bay below 249 K or surface below 100 K.
+              HOT_LIMIT: electronics bay above 310 K or sun-face above 450 K.
+              State must be consistent with node temperatures — it cannot be NOMINAL
+              if any temperature is outside its stated bounds.

@@ -1,0 +1,523 @@
+apiVersion: v3.1.0
+kind: DataContract
+id: 6e8f0a2b-4c5d-4e6f-2a3b-8c9d0e1f2a3b
+name: cross_model_state
+version: 1.1.0
+status: active
+domain: spacecraft_digital_twin
+
+description:
+  purpose: >
+    The cross-model coupling bus carries outputs from completed physics model
+    ticks back as inputs to the next tick of dependent models. It is the
+    mechanism by which radiation degrades thermal coatings, waste heat from
+    avionics affects battery efficiency, and power budget gates comms transmit power.
+    This is an internal pipeline topic, not customer-facing telemetry.
+    Every field is a derived quantity. Its validity follows from the producing model,
+    the declared coupling equation, and source status; this bus must not introduce
+    unsupported hardware bounds of its own.
+  limitations: >
+    All degradation effects operate on a one-tick lag (current tick reads
+    previous tick's degradation state). This is by design to prevent circular
+    dependency in the simulation loop.
+
+team:
+  - username: ${DATA_PRODUCT_OWNER}
+    role: Data Product Owner
+    description: Configured at deployment
+
+servers:
+  - server: ${KAFKA_INTERNAL_SERVER}
+    environment: production
+    type: kafka
+    host: ${KAFKA_BOOTSTRAP_SERVERS}
+    topic: ${KAFKA_CROSS_MODEL_TOPIC}
+
+schema:
+  - id: cross_model_state
+    name: cross_model_state
+    physicalType: topic
+    physicalName: cross_model_state
+    description: >
+      Internal coupling bus. One message per tick. All bounds flow from the
+      producing model's contract — they cannot be independently changed here.
+    properties:
+
+      - id: cms_timestamp_utc
+        name: timestamp_utc
+        logicalType: string
+        logicalTypeOptions:
+          format: date-time
+        physicalType: TIMESTAMP WITH TIME ZONE
+        required: true
+        primaryKey: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: electronics_bay_temp_K
+        name: electronics_bay_temp_K
+        businessName: Electronics bay temperature from thermal model (K)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Read from thermal_model_output.temp_electronics_bay_K on the previous tick.
+          Consumed by power model to compute battery efficiency temperature derating.
+        quality:
+          - type: text
+            description: >
+              Must equal the previous-tick thermal model value. No independent 249–310 K
+              bound is asserted here because the Orion-specific bay qualification range
+              is UNVERIFIED.
+
+      - id: power_dissipation_W
+        name: power_dissipation_W
+        businessName: Waste heat from electronics (W)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Electrical power dissipated as heat in the electronics bay.
+          Approximately 8% of total electrical load (power electronics conversion loss).
+          Consumed by thermal model as q_internal_W input.
+        quality:
+          - type: text
+            description: >
+              Must be ≥ 0 and must equal the power model's declared heat-dissipation
+              relationship. The previous fixed 8% factor and [64,400] W bounds are
+              MODEL_ASSUMPTIONS, not source-supported physics; do not enforce them as hard limits.
+
+      - id: available_power_W
+        name: available_power_W
+        businessName: Available power for non-essential loads (W)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Read from power_model_output.available_power_W on the previous tick.
+          Consumed by comms model to compute achievable transmit power.
+        quality:
+          - type: text
+            description: >
+              Must be ≥ 0 and must equal the value produced by the power model
+              according to its declared available-power relationship.
+
+      - id: solar_array_degradation_factor
+        name: solar_array_degradation_factor
+        businessName: Solar array degradation (from radiation model)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Read from radiation_model_output.solar_array_degradation on the previous tick.
+          Consumed by power model to derate array output.
+        quality:
+          - type: text
+            description: >
+              Must equal the radiation model's degradation factor. By definition relative
+              to BOL it may not exceed 1.0; the previous 0.60 floor is removed. If irreversible
+              dose damage is modeled, it must be non-increasing. See
+              radiation_model_output.solar_array_degradation in the audited
+              spacecraft_model_outputs contract.
+
+      - id: thermal_coating_alpha_factor
+        name: thermal_coating_alpha_factor
+        businessName: Absorptivity degradation factor (from radiation model)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Multiplicative factor on surface absorptivity α.
+          Consumed by thermal model in Q_solar calculation.
+        quality:
+          - type: text
+            description: >
+              Must equal the radiation model's configured optical-property factor.
+              The previous 1.0–1.15 range is not source-supported. The resulting absolute
+              absorptivity must remain 0 ≤ α ≤ 1. See
+              radiation_model_output.thermal_alpha_degradation in the audited
+              spacecraft_model_outputs contract.
+
+      - id: thermal_coating_eps_factor
+        name: thermal_coating_eps_factor
+        businessName: Emissivity degradation factor (from radiation model)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Multiplicative factor on surface emissivity ε.
+          Consumed by thermal model in Q_radiated calculation.
+        quality:
+          - type: text
+            description: >
+              Must equal the radiation model's configured optical-property factor.
+              The previous 0.85–1.0 range is not source-supported. The resulting absolute
+              emissivity must remain 0 ≤ ε ≤ 1. See
+              radiation_model_output.thermal_eps_degradation in the audited
+              spacecraft_model_outputs contract.
+
+      - id: plasma_noise_factor
+        name: plasma_noise_factor
+        businessName: Ionospheric plasma noise factor (from radiation model)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Multiplicative communications-quality factor applied to the configured
+          plasma/SEP noise model; 1.0 represents no additional degradation and
+          values below 1.0 represent degradation. This is not a conventional
+          "noise factor" where values above 1.0 would indicate increased noise —
+          it is defined here strictly as a quality-degradation multiplier applied
+          to comms model link performance during particle storms.
+        quality:
+          - type: text
+            description: >
+              If retained as a multiplicative degradation factor, 0 < factor ≤ 1.0 is a
+              model-definition constraint. The 0.1 floor is not source-supported and is removed.
+              SEP/plasma effects must be modeled with an explicitly declared mechanism.
+
+---
+apiVersion: v3.1.0
+kind: DataContract
+id: 7f9a1b3c-5d6e-4f7a-3b4c-9d0e1f2a3b4c
+name: telemetry_packet
+version: 1.1.0
+status: active
+domain: spacecraft_digital_twin
+
+description:
+  purpose: >
+    The synthesised telemetry packet — the primary output of the Artemis II
+    digital twin. Combines outputs from all four physics models into a single
+    message that mirrors what Orion would actually downlink to Mission Control
+    via the DSN. Published to Kafka topic `telemetry` at each simulation tick.
+    This is the contract that the Dashboard (TypeScript + Superset) and the
+    replay system consume. It is also the contract that validates the pipeline
+    end-to-end: if any field violates its bounds here, the fault can be traced
+    back to exactly one upstream physics model contract.
+  limitations: >
+    This contract does not replace the individual model contracts — it is the
+    integration boundary. Consumers should rely on this contract for
+    integration-boundary validation and should not independently reinterpret
+    or strengthen upstream physics constraints. Violations should be attributed
+    to the producing model's contract where applicable.
+  authoritativeDefinitions:
+    - url: https://www.nasa.gov/artemis/
+      type: businessDefinition
+      description: NASA Artemis II mission reference — authoritative source for all field definitions
+
+team:
+  - username: ${DATA_PRODUCT_OWNER}
+    role: Data Product Owner
+    description: Configured at deployment
+  - username: ${DATA_PRODUCT_CONSUMER}
+    role: Data Product Consumer
+    description: Configured at deployment
+
+servers:
+  - server: ${KAFKA_PRODUCTION_SERVER}
+    environment: production
+    type: kafka
+    host: ${KAFKA_BOOTSTRAP_SERVERS}
+    topic: ${KAFKA_TELEMETRY_TOPIC}
+  - server: ${TIMESCALE_PRODUCTION_SERVER}
+    environment: production
+    type: postgresql
+    host: ${TIMESCALE_HOST}
+    schema: ${TIMESCALE_SCHEMA}
+    table: ${TIMESCALE_TABLE}
+
+slaProperties:
+  - property: latency
+    value: 5
+    unit: s
+    description: Maximum end-to-end latency from AROW/OEM ingestion to telemetry topic publish
+  - property: freshness
+    value: 10
+    unit: s
+    description: Maximum age of the most recent message on the telemetry topic during live ops
+  - property: availability
+    value: 99.5
+    unit: percent
+
+roles:
+  - role: mission_control_read
+    access: read
+    description: NASA MCC — real-time monitoring
+  - role: dashboard_read
+    access: read
+    description: TypeScript dashboard consumer
+  - role: replay_read
+    access: read
+    description: Historical replay and analysis
+  - role: physics_engine_write
+    access: write
+    description: Simulation loop — the only authorised producer
+
+schema:
+  - id: telemetry_packet
+    name: telemetry_packet
+    physicalType: topic
+    physicalName: telemetry
+    description: >
+      One message per simulation tick. All fields are sourced from a specific
+      upstream model; the authoritative bounds for each field live in that
+      model's contract. The bounds stated here are necessary conditions for
+      publication — insufficient conditions would let bad data through.
+    dataGranularityDescription: One record per simulation tick (1 s live, 240 s OEM replay)
+
+    quality:
+      - type: text
+        description: >
+          All_nominal flag consistency: if all_nominal = True, then
+          thermal_state = NOMINAL AND power_state = NOMINAL AND comm_state = NOMINAL.
+          Violation of this constraint is a data integrity failure at the packet level.
+
+    properties:
+
+      - id: telem_timestamp_utc
+        name: timestamp_utc
+        logicalType: string
+        logicalTypeOptions:
+          format: date-time
+        physicalType: TIMESTAMP WITH TIME ZONE
+        required: true
+        primaryKey: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: spacecraft_id
+        name: spacecraft_id
+        businessName: Spacecraft identifier
+        logicalType: string
+        physicalType: VARCHAR(10)
+        required: true
+        description: Always "ORION_EM2" for Artemis II digital twin.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [ORION_EM2]
+
+      # ── Thermal fields (bounds from thermal_model_output contract) ──
+      - id: telem_temp_sun_face_K
+        name: temp_sun_face_K
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: "Temperature must be > 0 K; no unsupported 450 K hard ceiling is asserted. See thermal contract."
+
+      - id: telem_temp_shadow_face_K
+        name: temp_shadow_face_K
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: "Temperature must be > 0 K; no unsupported 350 K hard ceiling is asserted. See thermal contract."
+
+      - id: telem_temp_electronics_bay_K
+        name: temp_electronics_bay_K
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        criticalDataElement: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: "Critical. Orion-specific bay qualification bounds are UNVERIFIED; see thermal contract."
+
+      - id: telem_heater_active
+        name: heater_active
+        logicalType: boolean
+        physicalType: BOOLEAN
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: telem_thermal_state
+        name: thermal_state
+        logicalType: string
+        physicalType: VARCHAR(20)
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [NOMINAL, COLD_SURVIVAL, HOT_LIMIT]
+
+      # ── Power fields (bounds from power_model_output contract) ──
+      - id: telem_battery_voltage_V
+        name: battery_voltage_V
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: "Battery voltage must obey the configured power-model equation and any sourced hardware limits; 24–32 V is not hard-coded."
+
+      - id: telem_battery_soc_pct
+        name: battery_soc_pct
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        criticalDataElement: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: "Critical. Bounds: 0.0 ≤ battery_soc_pct ≤ 100.0. See power contract."
+
+      - id: telem_solar_array_power_W
+        name: solar_array_power_W
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be ≥ 0. No fixed numerical upper bound is asserted here.
+              NASA and ESA sources describe approximately 11 kW / 11.2 kW nominal
+              generation (see power_model_output authoritativeDefinitions), but
+              instantaneous output depends on illumination, Sun incidence, array
+              state, temperature, degradation, and electrical operating conditions,
+              and must not be capped at a fixed watt value without an authoritative
+              Orion EPS specification. See power contract.
+
+      - id: telem_power_state
+        name: power_state
+        logicalType: string
+        physicalType: VARCHAR(20)
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [NOMINAL, BATTERY_DISCHARGE, LOW_POWER_MODE, CRITICAL]
+
+      # ── Comms fields (bounds from comms_model_output contract) ──
+      - id: telem_signal_quality
+        name: signal_quality
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: "Bounds: 0.0 ≤ signal_quality ≤ 1.0. See comms contract."
+
+      - id: telem_link_margin_dB
+        name: link_margin_dB
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      - id: telem_data_rate_kbps
+        name: data_rate_kbps
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be 0 when comm_state = NO_LINK. When nonzero, the value must
+              belong to the configured mission/hardware communications rate set.
+              No fixed rate list (e.g. 1250/512/256/128/64/16 kbps) is asserted
+              as an Orion hardware fact without an authoritative communications
+              configuration. See comms contract.
+
+      - id: telem_comm_state
+        name: comm_state
+        logicalType: string
+        physicalType: VARCHAR(10)
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [NOMINAL, DEGRADED, NO_LINK]
+
+      # ── Radiation fields (bounds from radiation_model_output contract) ──
+      - id: telem_radiation_dose_rate_mrad_hr
+        name: radiation_dose_rate_mrad_hr
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: "Dose rate must be ≥ 0; no unsupported fixed upper dose-rate bound is asserted. See radiation contract."
+
+      - id: telem_cumulative_dose_krad
+        name: cumulative_dose_krad
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        criticalDataElement: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: "Critical. Must be ≥ 0 and monotonically non-decreasing. See radiation contract."
+
+      - id: telem_sep_event_active
+        name: sep_event_active
+        logicalType: boolean
+        physicalType: BOOLEAN
+        required: true
+        quality:
+          - metric: nullValues
+            mustBe: 0
+
+      # ── Derived health rollup ──
+      - id: telem_all_nominal
+        name: all_nominal
+        businessName: All subsystems nominal
+        logicalType: boolean
+        physicalType: BOOLEAN
+        required: true
+        description: >
+          True only when thermal_state = NOMINAL AND power_state = NOMINAL
+          AND comm_state = NOMINAL simultaneously.
+          This field is derived — it carries no additional information beyond
+          the three state fields. Its presence enables simple dashboard filtering.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Logical consistency rule (highest-priority quality check):
+              all_nominal = (thermal_state == 'NOMINAL') AND
+                            (power_state  == 'NOMINAL') AND
+                            (comm_state   == 'NOMINAL').
+              Any deviation from this logical identity is a data integrity failure
+              regardless of how the field was computed.
