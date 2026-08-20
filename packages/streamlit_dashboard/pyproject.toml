@@ -1,0 +1,15 @@
+[project]
+name = "streamlit_dashboard"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "streamlit>=1.36",
+    "pandas>=2.2",
+    "sqlalchemy>=2.0",
+    "psycopg[binary]>=3.1",
+    "plotly>=5.22",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
