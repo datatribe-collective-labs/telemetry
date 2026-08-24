@@ -4,11 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A spacecraft digital-twin telemetry project (NASA Artemis II / Orion), plus a separate,
-independent side-project ("Telemetry Project - Data Tribe") that ingests public JPL
-Solar System Dynamics API data. These two efforts share this repo but are otherwise
-unrelated - see "Two separate efforts" below before assuming any two packages are meant
-to talk to each other.
+A telemetry project working toward a full spacecraft digital twin for NASA Artemis II /
+Orion - real-time physics simulation (thermal, power, comms, radiation) fed by JPL
+Horizons ephemeris and NASA telemetry, streamed through Kafka, validated against the
+ODCS contracts in `packages/contracts/src/odcs/`, and surfaced on a dashboard. That
+target is fully specified but almost entirely unbuilt.
+
+Rather than build toward it directly, the strategy is incremental: prove the pattern
+small, then scale it up. The current working piece ("Telemetry Project - Data Tribe")
+ingests a public API (JPL Solar System Dynamics data) and shows it on a dashboard -
+the simplest possible version of the same ingest -> store -> visualize shape the
+digital twin will eventually need at much larger scale. It's an early step, not a
+permanent side-project, and the two don't share code yet - see "Two efforts in this
+repo" below before assuming any two packages are meant to talk to each other.
 
 ## Commands
 
@@ -43,24 +51,25 @@ If `uv sync`/`uv run` is ever run inside a Linux container with this repo bind-m
 on disk that breaks subsequent native Windows `uv run` with `Access is denied` on
 `.venv/lib64`. Fix: delete `.venv` and let `uv` rebuild it natively.
 
-## Two separate efforts in this repo
+## Two efforts in this repo
 
-1. **Spacecraft digital twin** (the original scaffold): simulates Artemis II Orion
+1. **Spacecraft digital twin** (the final target): simulates Artemis II Orion
    telemetry from JPL Horizons ephemeris + NASA OEM/AROW data, through four coupled
    physics models (thermal, power, comms, radiation), publishing a unified telemetry
    packet. Fully specified via ODCS data contracts in `packages/contracts/src/odcs/`
    (numbered `01_state_engine` ... `05_anomaly_ml_features`), but almost nothing is
    implemented - `packages/backend` is a FastAPI "hello world" stub, `packages/contracts`
-   has no actual Pydantic models (despite depending on `pydantic`), and `dashboard/`,
-   `airflow/`, `superset/` are empty scaffolding for a *planned* TypeScript + Superset
-   dashboard that does not exist yet.
+   has no actual Pydantic models (despite depending on `pydantic`), and
+   `digital_twin_dashboard/`, `airflow/`, `superset/` are empty scaffolding for a
+   *planned* TypeScript + Superset dashboard that does not exist yet.
 2. **JPL data-source dashboard** ("Telemetry Project - Data Tribe", `packages/pipelines`
-   + `packages/streamlit_dashboard`): a working, independent, lightweight ETL + Streamlit
-   app that ingests JPL SSD API data (currently only Close-Approach Data / CAD) into
-   TimescaleDB and visualizes it. This is the only end-to-end functional path in the repo.
-   It intentionally does **not** depend on `contracts` or `backend`, and has no formal
-   ODCS contract - see the root `README.md` for the full architecture diagram and
-   rationale.
+   + `packages/streamlit_dashboard`): a working, lightweight ETL + Streamlit app that
+   ingests JPL SSD API data (currently only Close-Approach Data / CAD) into TimescaleDB
+   and visualizes it. This is the only end-to-end functional path in the repo, and the
+   first step toward effort #1 - proving out the ingest -> store -> visualize pattern at
+   small scale. It intentionally does **not** depend on `contracts` or `backend` yet, and
+   has no formal ODCS contract - see the root `README.md` for the full architecture
+   diagram and rationale.
 
 When asked to "add a data source" or "add a page," it almost always means effort #2.
 

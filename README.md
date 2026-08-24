@@ -14,7 +14,7 @@ Working end-to-end data pipeline:
 
 **Source → processing → storage → Dashboard**
 
-## Architecture (current)
+## Architecture Diagram
 
 ```mermaid
 flowchart LR
