@@ -12,4 +12,7 @@ wheels/
 # IDE settings
 .idea/
 
+# Local environment config
+.env
+
 SpaceVault
