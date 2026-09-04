@@ -14,6 +14,7 @@ st.set_page_config(page_title="Telemetry Project", page_icon="\U0001F4E1", layou
 pages = [
     st.Page("pages/welcome.py", title="Welcome", icon="\U0001F3E0", default=True),
     st.Page("pages/close_approaches.py", title="Close Approaches", icon="\U0001F6F0"),
+    st.Page("pages/orion.py", title="Artemis II Orion", icon="\U0001F680"),
 ]
 
 pg = st.navigation(pages)

@@ -101,3 +101,25 @@ To add a new source: add its ingest job under
 `packages/pipelines/src/pipelines/ingest/`, a matching `data/<source>.py`
 query module, a `pages/<source>.py` page, and register the page in the
 `pages` list in `app.py`.
+
+## Artemis II Orion Trajectory Visualization
+
+Ingest and visualize NASA Artemis II Orion spacecraft (`-1024`) ephemeris data and Moon orbit (`301`) overlay from JPL Horizons.
+
+### Data Ingestion
+
+```bash
+docker compose up -d timescaledb
+uv run --package pipelines python -m pipelines.ingest.jpl_orion --stop-time "2026-04-10 23:00"
+```
+
+### Launch Dashboard
+
+```bash
+uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/src/streamlit_dashboard/app.py
+```
+
+Features on the **Artemis II Orion** page:
+- 3D Geocentric trajectory with physical 3D Earth globe mesh surface ($R = 6,371\text{ km}$).
+- 3D Moon orbit trajectory and position overlay (`id=301`).
+- Specific Orbital Energy ($\epsilon = \frac{v^2}{2} - \frac{\mu}{r}$) profile plot with parabolic escape threshold line ($\epsilon = 0$).

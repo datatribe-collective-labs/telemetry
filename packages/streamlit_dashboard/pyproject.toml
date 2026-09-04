@@ -8,7 +8,9 @@ dependencies = [
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.1",
     "plotly>=5.22",
+    "astroquery>=0.4",
 ]
+
 
 [build-system]
 requires = ["hatchling"]
