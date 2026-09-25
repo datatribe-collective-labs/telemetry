@@ -20,8 +20,10 @@ repo" below before assuming any two packages are meant to talk to each other.
 
 ## Commands
 
-This is a `uv` workspace monorepo (Python >=3.12). There is no lint/test/CI tooling
-configured yet - don't invent `ruff`/`pytest`/etc. commands.
+This is a `uv` workspace monorepo (Python >=3.12). There is no lint/CI tooling
+configured yet - don't invent `ruff`/etc. commands. `pytest` exists only for
+`packages/pipelines` so far (see "Tests" below) - don't assume it's wired up
+for other packages.
 
 ```
 # install/sync a package's deps (creates .venv at repo root)
@@ -38,6 +40,21 @@ uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/
 
 # check ingested data without a local psql client
 docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM close_approaches;"
+```
+
+### Tests
+
+Only `packages/pipelines` has tests (`packages/pipelines/tests/`), covering
+`pipelines/ingest/jpl_cad.py`. Pure-logic and HTTP-mocked tests need nothing
+extra; tests marked `@pytest.mark.integration` need a database and are
+skipped automatically if it isn't reachable.
+
+```
+# bring up the ephemeral test database (separate from dev's timescaledb, see
+# docker-compose.yml's timescaledb_test service - safe to wipe any time)
+docker compose up -d timescaledb_test
+
+uv run --package pipelines pytest
 ```
 
 `DATABASE_URL` (see `.env.example`) configures both the ingest job and the dashboard.

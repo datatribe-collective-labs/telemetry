@@ -9,3 +9,13 @@ members = ["packages/*"]
 
 [tool.uv]
 package = false
+
+# pytest always runs with the repo root as its rootdir/configfile (that's how
+# `uv run --package <pkg> pytest` invokes it), so ini options for any
+# package's tests must live here, not in that package's own pyproject.toml.
+# Add each package's tests dir to testpaths as it gets test coverage.
+[tool.pytest.ini_options]
+testpaths = ["packages/pipelines/tests"]
+markers = [
+    "integration: requires the timescaledb_test Docker service (see packages/pipelines/tests/conftest.py)",
+]
