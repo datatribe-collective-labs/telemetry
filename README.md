@@ -38,14 +38,14 @@ that could be added later, each as its own ingest job + dashboard page - see
 "Adding another data source" below.
 
 Everything downstream of the source (ingest job, database, dashboard) is part
-of this project. Only the database runs in Docker today - see "What runs
-where" below.
+of this project. Only the database (and the test environment) run in Docker
+today - see "What runs where" below.
 
 ## What runs where
 
-- **In Docker:** just `timescaledb` (via `docker-compose.yml`), on host port
+- **In Docker:** `timescaledb` (via `docker-compose.yml`), on host port
   **5433** (not 5432 - see `.env.example`; a native Postgres install commonly
-  already owns 5432).
+  already owns 5432) - plus the on-demand `tests` service (see "Tests" below).
 - **Not in Docker (run natively via `uv run`):** the ingest job
   (`pipelines.ingest.jpl_cad`) and the Streamlit dashboard. Both have
   `Dockerfile`s in their package folders, but those are for a future
@@ -88,9 +88,6 @@ password: telemetry
 
 ## Tests
 
-Unit tests only for now - no network access and no database needed. They
-live in the root `tests/` directory, mirroring the source layout:
-
 ```
 tests/
 └── unit/
@@ -106,11 +103,12 @@ Each test file covers one function (e.g.
 `responses`, database connections with `unittest.mock.MagicMock`.
 
 ```
-# from the repo root (pytest's config lives in the root pyproject.toml)
+# in Docker - from the repo root
+docker compose run --rm tests
+
+# or natively - also from the repo root
 uv run --package pipelines pytest
 ```
-
-So far only `packages/pipelines` (the JPL CAD ingest job) has coverage.
 
 ## Adding another data source
 

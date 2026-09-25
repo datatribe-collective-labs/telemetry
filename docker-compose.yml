@@ -15,5 +15,27 @@ services:
       timeout: 5s
       retries: 10
 
+  # Test environment - runs the unit tests (tests/) in a clean container.
+  # No Dockerfile: the official uv image already has Python 3.12 + uv.
+  # The repo is mounted read-only, and the venv/caches live inside the
+  # container, so it never writes to your checkout (no Linux .venv - see
+  # CLAUDE.md's "Windows/Docker gotcha").
+  # Behind the "test" profile so `docker compose up` doesn't start it.
+  # Run with: docker compose run --rm tests
+  tests:
+    image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+    profiles: ["test"]
+    working_dir: /app
+    volumes:
+      - .:/app:ro
+      - uv_cache:/root/.cache/uv
+    environment:
+      UV_PROJECT_ENVIRONMENT: /opt/venv
+      UV_FROZEN: "1"
+      UV_LINK_MODE: copy
+      PYTHONDONTWRITEBYTECODE: "1"
+    command: ["uv", "run", "--package", "pipelines", "pytest", "-p", "no:cacheprovider"]
+
 volumes:
   timescaledb_data:
+  uv_cache:

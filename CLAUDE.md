@@ -29,7 +29,7 @@ for other packages.
 # install/sync a package's deps (creates .venv at repo root)
 uv sync --package <backend|pipelines|contracts|streamlit_dashboard>
 
-# bring up local TimescaleDB (the only thing that runs in Docker for local dev)
+# bring up local TimescaleDB (the only long-running Docker service for local dev)
 docker compose up -d timescaledb
 
 # run the JPL close-approach ingest job
@@ -59,9 +59,17 @@ mirroring the source path, one file per function under test:
 Only `pipelines/ingest/jpl_cad.py` has tests so far.
 
 ```
-# from the repo root - run from a package dir, pytest finds no config and collects 0 tests
+# Docker test environment (compose service `tests`, profile "test")
+docker compose run --rm tests
+
+# natively - from the repo root; run from a package dir, pytest finds no config and collects 0 tests
 uv run --package pipelines pytest
 ```
+
+The `tests` service has no Dockerfile: it runs the official
+`ghcr.io/astral-sh/uv` image with the repo mounted **read-only** and the venv
+in the container (`UV_PROJECT_ENVIRONMENT=/opt/venv`), so it's safe w.r.t.
+the Windows/Docker `.venv` gotcha below - keep it read-only.
 
 `DATABASE_URL` (see `.env.example`) configures both the ingest job and the dashboard.
 TimescaleDB listens on host port **5433**, not 5432 - a native Postgres install commonly
@@ -127,8 +135,8 @@ JPL SSD CAD API --> pipelines.ingest.<source> --> TimescaleDB --> streamlit_dash
   asked.
 - Each package has its own `Dockerfile` (built from the **repo root**, e.g.
   `docker build -f packages/pipelines/Dockerfile .`, so `uv` can resolve the workspace),
-  but for local dev only `timescaledb` actually runs in Docker - `pipelines` and
-  `streamlit_dashboard` run natively via `uv run`. `packages/pipelines/Dockerfile`
+  but for local dev only `timescaledb` (and the on-demand `tests` service) run in
+  Docker - `pipelines` and `streamlit_dashboard` run natively via `uv run`. `packages/pipelines/Dockerfile`
   currently fails to build (`openjdk-17-jre-headless` isn't available on the current
   `python:3.12-slim`/Debian trixie base image) - it's pre-existing and unrelated to
   anything needing Java yet (`pyproject.toml` has no PySpark dependency despite the
