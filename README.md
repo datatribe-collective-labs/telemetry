@@ -38,21 +38,19 @@ that could be added later, each as its own ingest job + dashboard page - see
 "Adding another data source" below.
 
 Everything downstream of the source (ingest job, database, dashboard) is part
-of this project. Only the databases run in Docker today - see "What runs
+of this project. Only the database runs in Docker today - see "What runs
 where" below.
 
 ## What runs where
 
-- **In Docker:** `timescaledb` (via `docker-compose.yml`), on host port
+- **In Docker:** just `timescaledb` (via `docker-compose.yml`), on host port
   **5433** (not 5432 - see `.env.example`; a native Postgres install commonly
-  already owns 5432) - plus `timescaledb_test`, an ephemeral database only
-  used by the `pipelines` test suite (see "Tests" below), on port 5434.
+  already owns 5432).
 - **Not in Docker (run natively via `uv run`):** the ingest job
-  (`pipelines.ingest.jpl_cad`), the Streamlit dashboard, and the test suite.
-  `pipelines` and `streamlit_dashboard` both have `Dockerfile`s in their
-  package folders, but those are for a future containerized deployment - the
-  local dev workflow below runs them directly on your machine, talking to
-  the Dockerized database over `localhost:5433`.
+  (`pipelines.ingest.jpl_cad`) and the Streamlit dashboard. Both have
+  `Dockerfile`s in their package folders, but those are for a future
+  containerized deployment - the local dev workflow below runs them directly
+  on your machine, talking to the Dockerized database over `localhost:5433`.
 
 ## Run locally
 
@@ -90,40 +88,29 @@ password: telemetry
 
 ## Tests
 
-All tests live in the root `tests/` directory, split into unit and
-integration tests and mirroring the source layout:
+Unit tests only for now - no network access and no database needed. They
+live in the root `tests/` directory, mirroring the source layout:
 
 ```
 tests/
-├── conftest.py                    # fixtures shared by unit + integration
-├── unit/                          # no network, no database - always run
-│   └── <package>/<module path>/test_<function>.py
-└── integration/                   # need timescaledb_test - skip if it's down
-    └── <package>/<module path>/test_<function>.py
+└── unit/
+    └── <package>/<module path>/
+        ├── conftest.py            # fixtures for that module's tests
+        └── test_<function>.py     # one file per function under test
 ```
 
 Each test file covers one function (e.g.
 `tests/unit/pipelines/ingest/jpl_cad/test_fetch_close_approaches.py` tests
 `pipelines.ingest.jpl_cad.fetch_close_approaches`), and every test is named
-`test_<function>_<expected behavior>`.
+`test_<function>_<expected behavior>`. HTTP calls are mocked with
+`responses`, database connections with `unittest.mock.MagicMock`.
+
+```
+# from the repo root (pytest's config lives in the root pyproject.toml)
+uv run --package pipelines pytest
+```
 
 So far only `packages/pipelines` (the JPL CAD ingest job) has coverage.
-Integration tests are also marked `@pytest.mark.integration` and skip
-automatically (with a message explaining why) if the test database isn't
-reachable.
-
-```
-docker compose up -d timescaledb_test
-uv run --package pipelines pytest                     # everything
-uv run --package pipelines pytest tests/unit           # unit tests only
-```
-
-`timescaledb_test` is a separate, ephemeral database from the dev
-`timescaledb` service above (different port, different database name, no
-persistent volume) - tests never touch your dev data. Configure the test
-database via `TEST_DATABASE_URL` (see `.env.example`).
-
-No other package has test coverage yet.
 
 ## Adding another data source
 
@@ -139,4 +126,5 @@ The dashboard is structured as one Streamlit page per JPL data source
 To add a new source: add its ingest job under
 `packages/pipelines/src/pipelines/ingest/`, a matching `data/<source>.py`
 query module, a `pages/<source>.py` page, and register the page in the
-`pages` list in `app.py`.
+`pages` list in `app.py`. Add unit tests for the ingest job under
+`tests/unit/pipelines/ingest/<source>/`, following the layout in "Tests" above.

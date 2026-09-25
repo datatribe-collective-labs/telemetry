@@ -44,27 +44,22 @@ docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(
 
 ### Tests
 
-All tests live in the root `tests/` dir (not inside `packages/<package>/`),
-split by type and mirroring the source path, one file per function under test:
+Unit tests only for now - no integration tests (no test database). All
+tests live in the root `tests/` dir (not inside `packages/<package>/`),
+mirroring the source path, one file per function under test:
 
 - `tests/unit/<package>/<module path>/test_<function>.py` - no network, no DB
   (HTTP mocked with `responses`, connections with `MagicMock`).
-- `tests/integration/<package>/<module path>/test_<function>.py` - need the
-  test DB; each file sets `pytestmark = pytest.mark.integration` and they're
-  skipped automatically if the DB isn't reachable.
 - Test names: `test_<function>_<expected behavior>`.
-- `tests/conftest.py` holds fixtures shared by both types; per-module
-  fixtures go in that module's `conftest.py`. Same-named files in `unit/` and
-  `integration/` work because pytest runs with `--import-mode=importlib`
-  (so tests can't import each other - share helpers via fixtures).
+- Fixtures go in that module's `conftest.py`. pytest runs with
+  `--import-mode=importlib` so different modules can have same-named test
+  files (which also means tests can't import each other - share helpers via
+  fixtures).
 
 Only `pipelines/ingest/jpl_cad.py` has tests so far.
 
 ```
-# bring up the ephemeral test database (separate from dev's timescaledb, see
-# docker-compose.yml's timescaledb_test service - safe to wipe any time)
-docker compose up -d timescaledb_test
-
+# from the repo root - run from a package dir, pytest finds no config and collects 0 tests
 uv run --package pipelines pytest
 ```
 
@@ -122,7 +117,8 @@ JPL SSD CAD API --> pipelines.ingest.<source> --> TimescaleDB --> streamlit_dash
   - `app.py` - thin entrypoint only: `st.set_page_config` + registers pages in a
     `st.Page(...)` list. `pages/welcome.py` is the landing page.
   - Adding a source = one file in each of `pipelines/ingest/`, `data/`, `pages/`, plus
-    one line in `app.py`'s `pages` list.
+    one line in `app.py`'s `pages` list, plus unit tests under
+    `tests/unit/pipelines/ingest/<source>/` (see "Tests" above).
 - Both `pipelines` and `streamlit_dashboard` are deliberately independent (no shared
   import between them, each has its own `DEFAULT_DATABASE_URL`/connection handling) -
   this mirrors the existing isolation between `backend` and `pipelines` (see the

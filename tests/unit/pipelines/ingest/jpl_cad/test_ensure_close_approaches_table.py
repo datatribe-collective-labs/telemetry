@@ -1,10 +1,7 @@
 """Unit tests for pipelines.ingest.jpl_cad.ensure_close_approaches_table.
 
-The connection is mocked - no database. Database-backed behavior is covered
-in tests/integration/.
+The connection is mocked - no database.
 """
-
-from unittest.mock import MagicMock
 
 from pipelines.ingest.jpl_cad import (
     CLOSE_APPROACHES_HYPERTABLE,
@@ -13,16 +10,28 @@ from pipelines.ingest.jpl_cad import (
 )
 
 
-def test_ensure_close_approaches_table_skips_hypertable_without_timescaledb():
+def _executed_sql(conn):
+    return [call.args[0] for call in conn.mock_cursor.execute.call_args_list]
+
+
+def test_ensure_close_approaches_table_creates_hypertable_with_timescaledb(mock_connection):
+    mock_connection.mock_cursor.fetchone.return_value = (1,)
+
+    ensure_close_approaches_table(mock_connection)
+
+    executed_sql = _executed_sql(mock_connection)
+    assert CLOSE_APPROACHES_SCHEMA in executed_sql
+    assert CLOSE_APPROACHES_HYPERTABLE in executed_sql
+    mock_connection.commit.assert_called_once()
+
+
+def test_ensure_close_approaches_table_skips_hypertable_without_timescaledb(mock_connection):
     """timescaledb isn't installed -> falls back to a plain table, no crash."""
-    cursor = MagicMock()
-    cursor.fetchone.return_value = None
-    conn = MagicMock()
-    conn.cursor.return_value.__enter__.return_value = cursor
+    mock_connection.mock_cursor.fetchone.return_value = None
 
-    ensure_close_approaches_table(conn)
+    ensure_close_approaches_table(mock_connection)
 
-    executed_sql = [call.args[0] for call in cursor.execute.call_args_list]
+    executed_sql = _executed_sql(mock_connection)
     assert CLOSE_APPROACHES_SCHEMA in executed_sql
     assert CLOSE_APPROACHES_HYPERTABLE not in executed_sql
-    conn.commit.assert_called_once()
+    mock_connection.commit.assert_called_once()
