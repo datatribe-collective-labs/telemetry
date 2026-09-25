@@ -1,13 +1,13 @@
-"""Shared fixtures for packages/pipelines tests.
+"""Fixtures for integration tests of pipelines.ingest.jpl_cad.
 
-Integration tests (marked `@pytest.mark.integration`) need a real database -
-they talk to the ephemeral `timescaledb_test` Docker service, never the dev
-`timescaledb` one. Bring it up with:
+These tests need a real database - they talk to the ephemeral
+`timescaledb_test` Docker service, never the dev `timescaledb` one. Bring it
+up with:
 
     docker compose up -d timescaledb_test
 
-If it isn't reachable, integration tests are skipped (not errored) with a
-message telling you how to start it.
+If it isn't reachable, these tests are skipped (not errored) with a message
+telling you how to start it.
 """
 
 import os

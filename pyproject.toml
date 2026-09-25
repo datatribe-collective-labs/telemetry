@@ -13,9 +13,12 @@ package = false
 # pytest always runs with the repo root as its rootdir/configfile (that's how
 # `uv run --package <pkg> pytest` invokes it), so ini options for any
 # package's tests must live here, not in that package's own pyproject.toml.
-# Add each package's tests dir to testpaths as it gets test coverage.
+# Tests live in the root tests/ dir, split by type and mirroring the source
+# path: tests/{unit,integration}/<package>/<module path>/test_<function>.py.
+# importlib mode lets unit/ and integration/ reuse the same test file names.
 [tool.pytest.ini_options]
-testpaths = ["packages/pipelines/tests"]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
 markers = [
-    "integration: requires the timescaledb_test Docker service (see packages/pipelines/tests/conftest.py)",
+    "integration: requires the timescaledb_test Docker service (see tests/integration/)",
 ]

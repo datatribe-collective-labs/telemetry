@@ -44,10 +44,21 @@ docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(
 
 ### Tests
 
-Only `packages/pipelines` has tests (`packages/pipelines/tests/`), covering
-`pipelines/ingest/jpl_cad.py`. Pure-logic and HTTP-mocked tests need nothing
-extra; tests marked `@pytest.mark.integration` need a database and are
-skipped automatically if it isn't reachable.
+All tests live in the root `tests/` dir (not inside `packages/<package>/`),
+split by type and mirroring the source path, one file per function under test:
+
+- `tests/unit/<package>/<module path>/test_<function>.py` - no network, no DB
+  (HTTP mocked with `responses`, connections with `MagicMock`).
+- `tests/integration/<package>/<module path>/test_<function>.py` - need the
+  test DB; each file sets `pytestmark = pytest.mark.integration` and they're
+  skipped automatically if the DB isn't reachable.
+- Test names: `test_<function>_<expected behavior>`.
+- `tests/conftest.py` holds fixtures shared by both types; per-module
+  fixtures go in that module's `conftest.py`. Same-named files in `unit/` and
+  `integration/` work because pytest runs with `--import-mode=importlib`
+  (so tests can't import each other - share helpers via fixtures).
+
+Only `pipelines/ingest/jpl_cad.py` has tests so far.
 
 ```
 # bring up the ephemeral test database (separate from dev's timescaledb, see

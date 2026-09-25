@@ -90,14 +90,32 @@ password: telemetry
 
 ## Tests
 
-Unit tests exist for `packages/pipelines` (the JPL CAD ingest job), in
-`packages/pipelines/tests/`. Most tests need nothing extra; a few - marked
-`@pytest.mark.integration` - need a real database and skip automatically
-(with a message explaining why) if one isn't reachable.
+All tests live in the root `tests/` directory, split into unit and
+integration tests and mirroring the source layout:
+
+```
+tests/
+├── conftest.py                    # fixtures shared by unit + integration
+├── unit/                          # no network, no database - always run
+│   └── <package>/<module path>/test_<function>.py
+└── integration/                   # need timescaledb_test - skip if it's down
+    └── <package>/<module path>/test_<function>.py
+```
+
+Each test file covers one function (e.g.
+`tests/unit/pipelines/ingest/jpl_cad/test_fetch_close_approaches.py` tests
+`pipelines.ingest.jpl_cad.fetch_close_approaches`), and every test is named
+`test_<function>_<expected behavior>`.
+
+So far only `packages/pipelines` (the JPL CAD ingest job) has coverage.
+Integration tests are also marked `@pytest.mark.integration` and skip
+automatically (with a message explaining why) if the test database isn't
+reachable.
 
 ```
 docker compose up -d timescaledb_test
-uv run --package pipelines pytest
+uv run --package pipelines pytest                     # everything
+uv run --package pipelines pytest tests/unit           # unit tests only
 ```
 
 `timescaledb_test` is a separate, ephemeral database from the dev
