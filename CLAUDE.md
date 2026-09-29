@@ -20,14 +20,16 @@ repo" below before assuming any two packages are meant to talk to each other.
 
 ## Commands
 
-This is a `uv` workspace monorepo (Python >=3.12). There is no lint/test/CI tooling
-configured yet - don't invent `ruff`/`pytest`/etc. commands.
+This is a `uv` workspace monorepo (Python >=3.12). There is no lint/CI tooling
+configured yet - don't invent `ruff`/etc. commands. `pytest` exists only for
+`packages/pipelines` so far (see "Tests" below) - don't assume it's wired up
+for other packages.
 
 ```
 # install/sync a package's deps (creates .venv at repo root)
 uv sync --package <backend|pipelines|contracts|streamlit_dashboard>
 
-# bring up local TimescaleDB (the only thing that runs in Docker for local dev)
+# bring up local TimescaleDB (the only long-running Docker service for local dev)
 docker compose up -d timescaledb
 
 # run the JPL close-approach ingest job
@@ -39,6 +41,35 @@ uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/
 # check ingested data without a local psql client
 docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM close_approaches;"
 ```
+
+### Tests
+
+Unit tests only for now - no integration tests (no test database). All
+tests live in the root `tests/` dir (not inside `packages/<package>/`),
+mirroring the source path, one file per function under test:
+
+- `tests/unit/<package>/<module path>/test_<function>.py` - no network, no DB
+  (HTTP mocked with `responses`, connections with `MagicMock`).
+- Test names: `test_<function>_<expected behavior>`.
+- Fixtures go in that module's `conftest.py`. pytest runs with
+  `--import-mode=importlib` so different modules can have same-named test
+  files (which also means tests can't import each other - share helpers via
+  fixtures).
+
+Only `pipelines/ingest/jpl_cad.py` has tests so far.
+
+```
+# Docker test environment (compose service `tests`, profile "test")
+docker compose run --rm tests
+
+# natively - from the repo root; run from a package dir, pytest finds no config and collects 0 tests
+uv run --package pipelines pytest
+```
+
+The `tests` service has no Dockerfile: it runs the official
+`ghcr.io/astral-sh/uv` image with the repo mounted **read-only** and the venv
+in the container (`UV_PROJECT_ENVIRONMENT=/opt/venv`), so it's safe w.r.t.
+the Windows/Docker `.venv` gotcha below - keep it read-only.
 
 `DATABASE_URL` (see `.env.example`) configures both the ingest job and the dashboard.
 TimescaleDB listens on host port **5433**, not 5432 - a native Postgres install commonly
@@ -94,7 +125,8 @@ JPL SSD CAD API --> pipelines.ingest.<source> --> TimescaleDB --> streamlit_dash
   - `app.py` - thin entrypoint only: `st.set_page_config` + registers pages in a
     `st.Page(...)` list. `pages/welcome.py` is the landing page.
   - Adding a source = one file in each of `pipelines/ingest/`, `data/`, `pages/`, plus
-    one line in `app.py`'s `pages` list.
+    one line in `app.py`'s `pages` list, plus unit tests under
+    `tests/unit/pipelines/ingest/<source>/` (see "Tests" above).
 - Both `pipelines` and `streamlit_dashboard` are deliberately independent (no shared
   import between them, each has its own `DEFAULT_DATABASE_URL`/connection handling) -
   this mirrors the existing isolation between `backend` and `pipelines` (see the
@@ -103,8 +135,8 @@ JPL SSD CAD API --> pipelines.ingest.<source> --> TimescaleDB --> streamlit_dash
   asked.
 - Each package has its own `Dockerfile` (built from the **repo root**, e.g.
   `docker build -f packages/pipelines/Dockerfile .`, so `uv` can resolve the workspace),
-  but for local dev only `timescaledb` actually runs in Docker - `pipelines` and
-  `streamlit_dashboard` run natively via `uv run`. `packages/pipelines/Dockerfile`
+  but for local dev only `timescaledb` (and the on-demand `tests` service) run in
+  Docker - `pipelines` and `streamlit_dashboard` run natively via `uv run`. `packages/pipelines/Dockerfile`
   currently fails to build (`openjdk-17-jre-headless` isn't available on the current
   `python:3.12-slim`/Debian trixie base image) - it's pre-existing and unrelated to
   anything needing Java yet (`pyproject.toml` has no PySpark dependency despite the

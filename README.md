@@ -38,14 +38,14 @@ that could be added later, each as its own ingest job + dashboard page - see
 "Adding another data source" below.
 
 Everything downstream of the source (ingest job, database, dashboard) is part
-of this project. Only the database runs in Docker today - see "What runs
-where" below.
+of this project. Only the database (and the test environment) run in Docker
+today - see "What runs where" below.
 
 ## What runs where
 
-- **In Docker:** just `timescaledb` (via `docker-compose.yml`), on host port
+- **In Docker:** `timescaledb` (via `docker-compose.yml`), on host port
   **5433** (not 5432 - see `.env.example`; a native Postgres install commonly
-  already owns 5432).
+  already owns 5432) - plus the on-demand `tests` service (see "Tests" below).
 - **Not in Docker (run natively via `uv run`):** the ingest job
   (`pipelines.ingest.jpl_cad`) and the Streamlit dashboard. Both have
   `Dockerfile`s in their package folders, but those are for a future
@@ -86,6 +86,30 @@ user: telemetry
 password: telemetry
 ```
 
+## Tests
+
+```
+tests/
+└── unit/
+    └── <package>/<module path>/
+        ├── conftest.py            # fixtures for that module's tests
+        └── test_<function>.py     # one file per function under test
+```
+
+Each test file covers one function (e.g.
+`tests/unit/pipelines/ingest/jpl_cad/test_fetch_close_approaches.py` tests
+`pipelines.ingest.jpl_cad.fetch_close_approaches`), and every test is named
+`test_<function>_<expected behavior>`. HTTP calls are mocked with
+`responses`, database connections with `unittest.mock.MagicMock`.
+
+```
+# in Docker - from the repo root
+docker compose run --rm tests
+
+# or natively - also from the repo root
+uv run --package pipelines pytest
+```
+
 ## Adding another data source
 
 The dashboard is structured as one Streamlit page per JPL data source
@@ -100,4 +124,5 @@ The dashboard is structured as one Streamlit page per JPL data source
 To add a new source: add its ingest job under
 `packages/pipelines/src/pipelines/ingest/`, a matching `data/<source>.py`
 query module, a `pages/<source>.py` page, and register the page in the
-`pages` list in `app.py`.
+`pages` list in `app.py`. Add unit tests for the ingest job under
+`tests/unit/pipelines/ingest/<source>/`, following the layout in "Tests" above.

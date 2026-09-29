@@ -9,3 +9,13 @@ members = ["packages/*"]
 
 [tool.uv]
 package = false
+
+# Run pytest from the repo root (`uv run --package <pkg> pytest`): tests live
+# in the root tests/ dir, so ini options for any package's tests must live
+# here, not in that package's own pyproject.toml.
+# Tests live in the root tests/ dir, mirroring the source path:
+# tests/unit/<package>/<module path>/test_<function>.py. importlib mode lets
+# different modules have same-named test files (e.g. two test_main.py).
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
