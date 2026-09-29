@@ -4,7 +4,8 @@ Independent prototype dashboard for exploring JPL SSD API datasets - not the
 planned TypeScript/Superset spacecraft-telemetry dashboard described in the
 ODCS contracts. Each data source gets its own page under `pages/`.
 
-Run: streamlit run src/streamlit_dashboard/app.py
+Run (from the repo root):
+    uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/src/streamlit_dashboard/app.py
 """
 
 import streamlit as st
