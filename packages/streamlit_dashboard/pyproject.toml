@@ -4,11 +4,13 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
     "streamlit>=1.36",
+    "numpy>=1.26",
     "pandas>=2.2",
     "sqlalchemy>=2.0",
     "psycopg[binary]>=3.1",
     "plotly>=5.22",
     "astroquery>=0.4",
+    "python-dotenv>=1.0",
 ]
 
 
