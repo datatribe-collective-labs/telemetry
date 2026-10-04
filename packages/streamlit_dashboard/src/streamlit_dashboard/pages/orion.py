@@ -176,7 +176,7 @@ else:
         height=700,
         margin=dict(l=0, r=0, t=30, b=0),
     )
-    st.plotly_chart(fig_3d, use_container_width=True)
+    st.plotly_chart(fig_3d, width="stretch")
 
     # Line Charts: Range, Speed & Specific Energy Profiles
     chart_col1, chart_col2 = st.columns(2)
@@ -192,7 +192,7 @@ else:
         )
         fig_range.update_traces(line_color="#4B9CD3", line_width=2.5)
         fig_range.update_layout(margin=dict(l=0, r=0, t=40, b=0))
-        st.plotly_chart(fig_range, use_container_width=True)
+        st.plotly_chart(fig_range, width="stretch")
 
     with chart_col2:
         st.subheader("Orbital Speed Profile")
@@ -205,7 +205,7 @@ else:
         )
         fig_speed.update_traces(line_color="#FF4B4B", line_width=2.5)
         fig_speed.update_layout(margin=dict(l=0, r=0, t=40, b=0))
-        st.plotly_chart(fig_speed, use_container_width=True)
+        st.plotly_chart(fig_speed, width="stretch")
 
     # Specific Orbital Energy Chart
     st.subheader("Specific Orbital Energy Profile (epsilon)")
@@ -228,7 +228,7 @@ else:
         )
         fig_energy.update_traces(line_color="#00CC96", line_width=2.5)
         fig_energy.update_layout(height=400, margin=dict(l=0, r=0, t=40, b=0))
-        st.plotly_chart(fig_energy, use_container_width=True)
+        st.plotly_chart(fig_energy, width="stretch")
 
     # Telemetry Data Table
     st.subheader("Raw Vector Telemetry Records")
@@ -247,7 +247,7 @@ else:
     present_cols = [c for c in display_cols if c in df.columns]
     st.dataframe(
         df[present_cols].rename(columns=display_cols),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
