@@ -2,25 +2,20 @@ services:
   timescaledb:
     image: timescale/timescaledb:latest-pg16
     environment:
-      POSTGRES_USER: telemetry
-      POSTGRES_PASSWORD: telemetry
-      POSTGRES_DB: telemetry
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
     ports:
       - "5433:5432"
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U telemetry -d telemetry"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  # Test environment - runs the unit tests (tests/) in a clean container.
-  # No Dockerfile: the official uv image already has Python 3.12 + uv.
-  # The repo is mounted read-only, and the venv/caches live inside the
-  # container, so it never writes to your checkout (no Linux .venv - see
-  # CLAUDE.md's "Windows/Docker gotcha").
-  # Behind the "test" profile so `docker compose up` doesn't start it.
+  # Unit tests run in a clean container with the repository mounted read-only.
   # Run with: docker compose run --rm tests
   tests:
     image: ghcr.io/astral-sh/uv:python3.12-bookworm-slim
@@ -35,6 +30,20 @@ services:
       UV_LINK_MODE: copy
       PYTHONDONTWRITEBYTECODE: "1"
     command: ["uv", "run", "--package", "pipelines", "pytest", "-p", "no:cacheprovider"]
+
+  orion-tests:
+    build:
+      context: .
+      dockerfile: tests/Dockerfile
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/${POSTGRES_DB}
+      RUN_ORION_TIMESCALE_INTEGRATION: "1"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
 
 volumes:
   timescaledb_data:
