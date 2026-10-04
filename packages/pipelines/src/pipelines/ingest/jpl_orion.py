@@ -54,7 +54,9 @@ def ensure_orion_ephemeris_table(conn: psycopg.Connection) -> None:
         if cur.fetchone():
             cur.execute(ORION_EPHEMERIS_HYPERTABLE)
         else:
-            print("timescaledb extension not installed - using a regular Postgres table.")
+            print(
+                "timescaledb extension not installed - using a regular Postgres table."
+            )
     conn.commit()
 
 
@@ -104,7 +106,6 @@ def fetch_orion_ephemeris(
     base_url: str | None = None,
 ) -> list[OrionRecord]:
 
-
     base_url = base_url or os.environ.get("JPL_HORIZONS_BASE_URL", DEFAULT_BASE_URL)
     params = {
         "format": "json",
@@ -139,11 +140,16 @@ def fetch_orion_ephemeris(
     def _get_col(candidates: list[str], default_idx: int) -> str:
         for c in df.columns:
             for cand in candidates:
-                if c == cand or c.startswith(cand) or cand in c:
+                if c == cand or c.startswith(cand):
                     return c
+        for c in df.columns:
+            if any(cand in c for cand in candidates):
+                return c
         if default_idx < len(df.columns):
             return df.columns[default_idx]
-        raise ValueError(f"Could not find matching column for {candidates} in {df.columns.tolist()}")
+        raise ValueError(
+            f"Could not find matching column for {candidates} in {df.columns.tolist()}"
+        )
 
     jd_col = _get_col(["JDTDB", "JD"], 0)
     date_col = _get_col(["Calendar Date", "Calendar", "Date", "TDB"], 1)
@@ -223,11 +229,18 @@ def upsert_orion_ephemeris(conn: psycopg.Connection, records: list[OrionRecord])
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--command", default=os.environ.get("HORIZONS_COMMAND", "-1024"))
-    parser.add_argument("--center", default=os.environ.get("HORIZONS_CENTER", "500@399"))
-    parser.add_argument("--start-time", default=os.environ.get("HORIZONS_START", "2026-04-02 02:00"))
-    parser.add_argument("--stop-time", default=os.environ.get("HORIZONS_STOP", "2026-04-10 23:00"))
-
+    parser.add_argument(
+        "--command", default=os.environ.get("HORIZONS_COMMAND", "-1024")
+    )
+    parser.add_argument(
+        "--center", default=os.environ.get("HORIZONS_CENTER", "500@399")
+    )
+    parser.add_argument(
+        "--start-time", default=os.environ.get("HORIZONS_START", "2026-04-02 02:00")
+    )
+    parser.add_argument(
+        "--stop-time", default=os.environ.get("HORIZONS_STOP", "2026-04-10 23:00")
+    )
 
     parser.add_argument("--step-size", default=os.environ.get("HORIZONS_STEP", "1 h"))
     args = parser.parse_args()
@@ -247,7 +260,9 @@ def main() -> None:
     finally:
         conn.close()
 
-    print(f"Upserted {count} Orion ephemeris records ({args.start_time} .. {args.stop_time}).")
+    print(
+        f"Upserted {count} Orion ephemeris records ({args.start_time} .. {args.stop_time})."
+    )
 
 
 if __name__ == "__main__":
