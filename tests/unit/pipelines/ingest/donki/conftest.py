@@ -1,6 +1,5 @@
 """Shared fixtures for DONKI ingestion tests."""
 
-from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
 import pytest

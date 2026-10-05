@@ -1,7 +1,6 @@
 """Unit tests for pipelines.ingest.jpl_cad._to_float."""
 
 import pytest
-
 from pipelines.ingest.jpl_cad import _to_float
 
 

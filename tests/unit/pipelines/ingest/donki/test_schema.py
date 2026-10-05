@@ -1,8 +1,6 @@
 """Tests for ensure_donki_events_table function."""
 
-from unittest.mock import MagicMock
 
-import pytest
 
 from pipelines.ingest.donki import DONKI_EVENTS_SCHEMA, ensure_donki_events_table
 

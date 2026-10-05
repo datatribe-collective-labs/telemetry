@@ -3,8 +3,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 import streamlit as st
-from sqlalchemy import create_engine
 from dotenv import load_dotenv
+from sqlalchemy import create_engine
 
 # Load .env from project root (where docker-compose.yml lives)
 load_dotenv(Path(__file__).parents[5] / ".env")

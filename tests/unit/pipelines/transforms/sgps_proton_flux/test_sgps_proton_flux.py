@@ -6,10 +6,8 @@ these tests do not require external services.
 """
 
 from math import isfinite
-from typing import Mapping
 
 import pytest
-
 from pipelines.transforms.sgps_proton_flux import (
     CHANNEL_INDEX_TO_NAME,
     DIFFERENTIAL_PER_KEV,
@@ -18,9 +16,9 @@ from pipelines.transforms.sgps_proton_flux import (
     SgpsChannel,
     SgpsDerivationError,
     SgpsGe10Result,
+    channels_from_table_rows,
     convert_differential_to_mev,
     derive_ge10_pfu,
-    channels_from_table_rows,
 )
 
 

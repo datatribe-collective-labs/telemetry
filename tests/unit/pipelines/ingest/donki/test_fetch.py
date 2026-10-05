@@ -3,14 +3,13 @@
 import pytest
 import requests
 import responses
-from responses import matchers
-
 from pipelines.ingest.donki import (
     DEFAULT_BASE_URL,
     EVENT_TYPES,
     fetch_donki_event_type,
     fetch_donki_events,
 )
+from responses import matchers
 
 
 class TestFetchDonkiEventType:

@@ -1,8 +1,6 @@
 """Tests for DonkiEvent dataclass and from_api_record factory."""
 
-from datetime import datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from pipelines.ingest.donki import DonkiEvent, _event_id, _stable_payload_id
 
@@ -18,7 +16,7 @@ class TestDonkiEventFromApiRecord:
         )
 
         assert result.event_id == "2026-04-01T23:45:00-CME-001"
-        assert result.start_time == datetime(2026, 4, 1, 23, 45, tzinfo=timezone.utc)
+        assert result.start_time == datetime(2026, 4, 1, 23, 45, tzinfo=UTC)
         assert result.event_time == result.start_time
         assert result.end_time is None
         assert result.payload["sourceLocation"] == "N28W25"
@@ -30,28 +28,28 @@ class TestDonkiEventFromApiRecord:
             "https://example.test/CME",
         )
 
-        assert result.end_time == datetime(2026, 4, 2, 5, tzinfo=timezone.utc)
+        assert result.end_time == datetime(2026, 4, 2, 5, tzinfo=UTC)
 
     def test_sep_uses_sep_id_and_event_time(self, sep_payload):
         result = DonkiEvent.from_api_record("SEP", sep_payload[0], "https://example.test/SEP")
 
         assert result.event_id == "2026-04-01T12:00:00-SEP-001"
-        assert result.start_time == datetime(2026, 4, 1, 12, tzinfo=timezone.utc)
+        assert result.start_time == datetime(2026, 4, 1, 12, tzinfo=UTC)
         # event_time uses first match: eventTime (12:00) comes before peakTime (14:30)
-        assert result.event_time == datetime(2026, 4, 1, 12, tzinfo=timezone.utc)
+        assert result.event_time == datetime(2026, 4, 1, 12, tzinfo=UTC)
 
     def test_flr_uses_flr_id_and_peak_time(self, flr_payload):
         result = DonkiEvent.from_api_record("FLR", flr_payload[0], "https://example.test/FLR")
 
         assert result.event_id == "2026-04-01T08:00:00-FLR-001"
-        assert result.start_time == datetime(2026, 4, 1, 8, tzinfo=timezone.utc)
-        assert result.event_time == datetime(2026, 4, 1, 8, 15, tzinfo=timezone.utc)
+        assert result.start_time == datetime(2026, 4, 1, 8, tzinfo=UTC)
+        assert result.event_time == datetime(2026, 4, 1, 8, 15, tzinfo=UTC)
 
     def test_gst_uses_gst_id(self, gst_payload):
         result = DonkiEvent.from_api_record("GST", gst_payload[0], "https://example.test/GST")
 
         assert result.event_id == "2026-04-01T00:00:00-GST-001"
-        assert result.start_time == datetime(2026, 4, 1, tzinfo=timezone.utc)
+        assert result.start_time == datetime(2026, 4, 1, tzinfo=UTC)
 
     def test_missing_timestamps_returns_none(self):
         payload = {"activityID": "test-123"}
@@ -71,13 +69,13 @@ class TestDonkiEventFromApiRecord:
         payload = {"activityID": "test-123", "startTime": "2026-04-01T12:00Z"}
         result = DonkiEvent.from_api_record("CME", payload, "https://example.test/CME")
 
-        assert result.start_time == datetime(2026, 4, 1, 12, tzinfo=timezone.utc)
+        assert result.start_time == datetime(2026, 4, 1, 12, tzinfo=UTC)
 
     def test_iso_timestamp_with_offset_parsed_correctly(self):
         payload = {"activityID": "test-123", "startTime": "2026-04-01T12:00:00+02:00"}
         result = DonkiEvent.from_api_record("CME", payload, "https://example.test/CME")
 
-        assert result.start_time == datetime(2026, 4, 1, 10, tzinfo=timezone.utc)
+        assert result.start_time == datetime(2026, 4, 1, 10, tzinfo=UTC)
 
 
 class TestEventIdResolution:

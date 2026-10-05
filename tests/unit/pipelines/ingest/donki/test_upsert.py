@@ -1,9 +1,6 @@
 """Tests for upsert_donki_events function."""
 
 import json
-from unittest.mock import MagicMock
-
-import pytest
 
 from pipelines.ingest.donki import DonkiEvent, upsert_donki_events
 

@@ -19,9 +19,9 @@ Important:
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from math import exp, isfinite, log
-from typing import Iterable, Mapping, Sequence
 
 PFU = "protons/(cm^2 sr s)"
 DIFFERENTIAL_PER_KEV = "protons/(cm^2 sr keV s)"

@@ -3,14 +3,13 @@
 HTTP is mocked with `responses` - no network access.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 import requests
 import responses
-from responses import matchers
-
 from pipelines.ingest.jpl_cad import DEFAULT_BASE_URL, fetch_close_approaches
+from responses import matchers
 
 
 @responses.activate
@@ -32,7 +31,7 @@ def test_fetch_close_approaches_parses_api_response(cad_api_response, make_close
         make_close_approach(),
         make_close_approach(
             des="2025 XY", orbit_id="12", close_approach_jd=2460510.75,
-            close_approach_time=datetime(2029, 5, 2, 3, 10, tzinfo=timezone.utc),
+            close_approach_time=datetime(2029, 5, 2, 3, 10, tzinfo=UTC),
             dist_au=0.0399, dist_min_au=None, dist_max_au=None,
             v_rel_kms=9.87, v_inf_kms=None, h_mag=None, body="Earth",
         ),
