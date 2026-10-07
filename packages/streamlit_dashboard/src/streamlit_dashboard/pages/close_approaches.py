@@ -46,7 +46,7 @@ else:
     }
     st.dataframe(
         df[list(display_columns)].rename(columns=display_columns),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
     )
 
@@ -66,4 +66,4 @@ else:
     )
     fig.update_traces(marker=dict(size=9, line=dict(width=0)))
     fig.update_layout(margin=dict(l=0, r=0, t=40, b=0))
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
