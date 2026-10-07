@@ -1,13 +1,12 @@
 import os
 import unittest
 
-from sqlalchemy import create_engine
-
 from pipelines.ingest.jpl_orion import (
     ensure_orion_ephemeris_table,
     fetch_orion_ephemeris,
     upsert_orion_ephemeris,
 )
+from sqlalchemy import create_engine
 from streamlit_dashboard.data.orion import load_orion_ephemeris
 
 

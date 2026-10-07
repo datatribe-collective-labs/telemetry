@@ -4,6 +4,7 @@ Open-source telemetry project that ingests, processes, and analyzes mission
 telemetry data in real-time using publicly available NASA flight data.
 
 **What it provides:**
+
 - Real-time ingestion and processing of telemetry streams
 - Storage and analysis of the data
 - Dashboard for real-time monitoring and visualization
@@ -18,28 +19,35 @@ Working end-to-end data pipeline:
 
 ```mermaid
 flowchart LR
-    Source(["Data Source\nJPL asteroid close-approach data"]) --> Ingest["Ingest Job\nfetches & loads new data"]
-    Ingest --> DB[("TimescaleDB\n")]
-    DB --> Dash["Streamlit Dashboard\n"]
+    Source1(["Data Source 1\nJPL Close-Approach Data (CAD)"])
+    Source2(["Data Source 2\nJPL Orion Telemetry"])
+    Source3(["Data Source 3\nNASA DONKI Space Weather"])
+    Ingest1["Ingest Job\npipelines.ingest.jpl_cad"]
+    Ingest2["Ingest Job\npipelines.ingest.jpl_orion"]
+    Ingest3["Ingest Job\npipelines.ingest.donki"]
+    DB[("TimescaleDB\n")]
+    Dash["Streamlit Dashboard\n"]
+
+    Source1 --> Ingest1
+    Source2 --> Ingest2
+    Source3 --> Ingest3
+    Ingest1 --> DB
+    Ingest2 --> DB
+    Ingest3 --> DB
+    DB --> Dash
 
     subgraph Docker["Docker"]
         DB
     end
 ```
 
-**Data Source:** [JPL Close-Approach Data (CAD) API](https://ssd-api.jpl.nasa.gov/doc/cad.html)
-- a free, public NASA/JPL API listing upcoming and past close approaches of
-asteroids and comets to Earth. It's the only place data comes from; this
-project doesn't generate or modify it, only reads it.
+**Data Sources:**
 
-This is currently the project's **only data source**. JPL publishes several
-other datasets under the same API family (e.g. impact risk, fireball events)
-that could be added later, each as its own ingest job + dashboard page - see
-"Adding another data source" below.
+1. **[JPL Close-Approach Data (CAD) API](https://ssd-api.jpl.nasa.gov/doc/cad.html)** — Upcoming and past close approaches of asteroids/comets to Earth
+2. **[JPL Horizons / Orion](https://ssd-api.jpl.nasa.gov/horizons.html)** — Artemis II Orion spacecraft telemetry
+3. **[NASA CCMC DONKI API](https://ccmc.gsfc.nasa.gov/DONKI-API/get/)** — Space weather events (CME, SEP, FLR, GST, HSS, etc.)
 
-Everything downstream of the source (ingest job, database, dashboard) is part
-of this project. Only the database (and the test environment) run in Docker
-today - see "What runs where" below.
+Each source has its own ingest job, database table, and dashboard page.
 
 ## What runs where
 
@@ -54,46 +62,88 @@ today - see "What runs where" below.
 
 ## Run locally
 
-```
+### 1. Start the database
+```bash
 docker compose up -d timescaledb
+```
+
+### 2. Ingest data (run each pipeline as needed)
+
+**JPL Close-Approach Data (CAD):**
+```bash
 uv run --package pipelines python -m pipelines.ingest.jpl_cad
+# Options: --date-min now --date-max +60 --dist-max 0.05 --body Earth
+```
+
+**JPL Orion Telemetry:**
+```bash
+uv run --package pipelines python -m pipelines.ingest.jpl_orion
+# (Requires RUN_ORION_TIMESCALE_INTEGRATION=1 for live integration tests)
+```
+
+**NASA DONKI Space Weather Events:**
+```bash
+uv run --package pipelines python -m pipelines.ingest.donki
+# Options: --start-date 2026-04-01 --end-date 2026-04-10 --event-type CME --event-type SEP
+#          --request-delay 0.2
+```
+
+### 3. Launch the dashboard
+```bash
 uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/src/streamlit_dashboard/app.py
 ```
 
-Then open http://localhost:8501.
+Then open **http://localhost:8501** in your browser.
+
+### Dashboard Pages
+- **Welcome** — Project overview
+- **Close Approaches** — JPL CAD asteroid/comet close approaches
+- **Artemis II Orion** — Orion spacecraft telemetry
+- **NASA DONKI** — Space weather events (CME, SEP, FLR, GST, HSS, etc.)
 
 Configure via the `DATABASE_URL` environment variable (see `.env.example`).
 
 ## Checking the ingested data
 
-The data lives in the `close_approaches` table inside the `timescaledb`
-container. Query it directly with `psql` via Docker - no local client needed:
+The data lives in three tables inside the `timescaledb` container. Query them directly with `psql` via Docker - no local client needed:
 
+**JPL Close Approaches:**
 ```
 docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM close_approaches;"
-
 docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT des, close_approach_time, dist_au, v_rel_kms FROM close_approaches ORDER BY close_approach_time LIMIT 10;"
 ```
 
+**JPL Orion Telemetry:**
+```
+docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM orion_telemetry;"
+```
+
+**NASA DONKI Space Weather Events:**
+```
+docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM donki_events;"
+docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT event_type, count(*) FROM donki_events GROUP BY event_type ORDER BY count DESC;"
+docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT event_type, event_id, event_time, start_time FROM donki_events ORDER BY COALESCE(event_time, start_time) DESC LIMIT 10;"
+```
+
 Or connect with any Postgres GUI client (DBeaver, TablePlus, pgAdmin, the
-VS Code PostgreSQL extension, etc.):
+VS Code PostgreSQL extension, etc.) using the `DATABASE_URL` environment variable
+configured in `.env.example`:
 
 ```
-host: localhost
-port: 5433
-database: telemetry
-user: telemetry
-password: telemetry
+# From .env.example
+# DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DB
 ```
 
 ## Tests
 
 ```
 tests/
-└── unit/
+├── unit/
     └── <package>/<module path>/
         ├── conftest.py            # fixtures for that module's tests
         └── test_<function>.py     # one file per function under test
+└── integration/
+      └── <package>/<module path>/test_<feature>.py
 ```
 
 Each test file covers one function (e.g.
@@ -107,8 +157,11 @@ Each test file covers one function (e.g.
 docker compose run --rm tests
 
 # or natively - also from the repo root
-uv run --package pipelines pytest
+uv run --package pipelines pytest tests/unit
 ```
+
+Live datasource and database checks belong under `tests/integration/` and have
+their own datasource-specific runner.
 
 ## Adding another data source
 
@@ -126,3 +179,62 @@ To add a new source: add its ingest job under
 query module, a `pages/<source>.py` page, and register the page in the
 `pages` list in `app.py`. Add unit tests for the ingest job under
 `tests/unit/pipelines/ingest/<source>/`, following the layout in "Tests" above.
+
+---
+
+## NASA DONKI Space Weather — Details
+
+### Supported Event Types
+| Type | Description | ID Field(s) |
+|------|-------------|-------------|
+| `CME` | Coronal Mass Ejection | `activityID`, `cmeID` |
+| `CMEAnalysis` | CME Analysis | `activityID`, `analysisID`, `cmeID`, `associatedCMEID` |
+| `SEP` | Solar Energetic Particle | `sepID`, `activityID` |
+| `FLR` | Solar Flare | `flrID`, `activityID` |
+| `IPS` | Interplanetary Shock | `ipsID`, `activityID` |
+| `GST` | Geomagnetic Storm | `gstID`, `activityID` |
+| `RBE` | Radiation Belt Enhancement | `rbeID`, `activityID` |
+| `HSS` | High Speed Stream | `hssID`, `activityID` |
+| `MPC` | Magnetopause Crossing | `mpcID`, `activityID` |
+| `WSAEnlilSimulations` | WSA-Enlil Simulation | `simulationID`, `activityID` |
+
+### Ingestion Options
+```bash
+# Full backfill for a date range (all event types)
+uv run --package pipelines python -m pipelines.ingest.donki \
+  --start-date 2026-01-01 --end-date 2026-12-31
+
+# Specific event types only
+uv run --package pipelines python -m pipelines.ingest.donki \
+  --start-date 2026-04-01 --end-date 2026-04-10 \
+  --event-type CME --event-type SEP --event-type FLR
+
+# Adjust rate limiting (default 0.2s between requests)
+uv run --package pipelines python -m pipelines.ingest.donki \
+  --request-delay 0.5
+```
+
+### Database Schema
+The `donki_events` table retains the **complete DONKI JSON payload** in a `JSONB` column (`payload`), enabling future schema evolution without re-ingestion. Common fields are extracted for indexing:
+- `event_type` — One of the 10 types above
+- `event_id` — Type-specific ID (e.g., `activityID` for CME)
+- `start_time` / `end_time` / `event_time` — Canonical timestamps (UTC)
+- `source_url` — Full API URL used for the fetch
+- `fetched_at` — Ingestion timestamp (auto)
+
+Indexes exist on `start_time` and `(event_type, event_time)` for efficient time-range queries.
+
+### Dashboard Features
+The **NASA DONKI** dashboard page provides:
+- **Sidebar filters**: Date range, multi-select event types
+- **Metrics**: Total events, unique event types, events with timestamps
+- **Inventory table**: Count per event type
+- **Events table**: All events with type, ID, timestamps
+- **Raw JSON viewer**: Select any event to view the complete DONKI payload
+
+### Correlation with Other Sources
+DONKI events provide space weather context for:
+- **Orion telemetry** — SEP/GST events correlate with radiation sensor spikes
+- **Close approaches** — CME/HSS affect solar wind density (drag, comms)
+
+All three sources share `TIMESTAMPTZ` columns enabling temporal joins for multi-source analysis.

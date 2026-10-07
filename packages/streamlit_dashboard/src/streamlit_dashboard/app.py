@@ -16,6 +16,7 @@ pages = [
     st.Page("pages/welcome.py", title="Welcome", icon="\U0001F3E0", default=True),
     st.Page("pages/close_approaches.py", title="Close Approaches", icon="\U0001F6F0"),
     st.Page("pages/orion.py", title="Artemis II Orion", icon="\U0001F680"),
+    st.Page("pages/donki.py", title="NASA DONKI", icon="\U0001F31E"),
 ]
 
 pg = st.navigation(pages)

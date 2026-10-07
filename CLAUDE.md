@@ -44,12 +44,13 @@ docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(
 
 ### Tests
 
-Unit tests only for now - no integration tests (no test database). All
-tests live in the root `tests/` dir (not inside `packages/<package>/`),
-mirroring the source path, one file per function under test:
+Tests live in the root `tests/` dir (not inside `packages/<package>/`),
+mirroring the source path:
 
 - `tests/unit/<package>/<module path>/test_<function>.py` - no network, no DB
   (HTTP mocked with `responses`, connections with `MagicMock`).
+- `tests/integration/<package>/<module path>/test_<feature>.py` - require an
+  explicitly configured test database and may call a live datasource.
 - Test names: `test_<function>_<expected behavior>`.
 - Fixtures go in that module's `conftest.py`. pytest runs with
   `--import-mode=importlib` so different modules can have same-named test
@@ -62,8 +63,8 @@ Only `pipelines/ingest/jpl_cad.py` has tests so far.
 # Docker test environment (compose service `tests`, profile "test")
 docker compose run --rm tests
 
-# natively - from the repo root; run from a package dir, pytest finds no config and collects 0 tests
-uv run --package pipelines pytest
+# natively - unit tests only
+uv run --package pipelines pytest tests/unit
 ```
 
 The `tests` service has no Dockerfile: it runs the official
@@ -92,15 +93,15 @@ on disk that breaks subsequent native Windows `uv run` with `Access is denied` o
    implemented - `packages/backend` is a FastAPI "hello world" stub, `packages/contracts`
    has no actual Pydantic models (despite depending on `pydantic`), and
    `digital_twin_dashboard/`, `airflow/`, `superset/` are empty scaffolding for a
-   *planned* TypeScript + Superset dashboard that does not exist yet.
+   _planned_ TypeScript + Superset dashboard that does not exist yet.
 2. **JPL data-source dashboard** ("Telemetry Project - Data Tribe", `packages/pipelines`
-   + `packages/streamlit_dashboard`): a working, lightweight ETL + Streamlit app that
-   ingests JPL SSD API data (currently only Close-Approach Data / CAD) into TimescaleDB
-   and visualizes it. This is the only end-to-end functional path in the repo, and the
-   first step toward effort #1 - proving out the ingest -> store -> visualize pattern at
-   small scale. It intentionally does **not** depend on `contracts` or `backend` yet, and
-   has no formal ODCS contract - see the root `README.md` for the full architecture
-   diagram and rationale.
+   - `packages/streamlit_dashboard`): a working, lightweight ETL + Streamlit app that
+     ingests JPL SSD API data (currently only Close-Approach Data / CAD) into TimescaleDB
+     and visualizes it. This is the only end-to-end functional path in the repo, and the
+     first step toward effort #1 - proving out the ingest -> store -> visualize pattern at
+     small scale. It intentionally does **not** depend on `contracts` or `backend` yet, and
+     has no formal ODCS contract - see the root `README.md` for the full architecture
+     diagram and rationale.
 
 When asked to "add a data source" or "add a page," it almost always means effort #2.
 
@@ -128,7 +129,7 @@ JPL SSD CAD API --> pipelines.ingest.<source> --> TimescaleDB --> streamlit_dash
     one line in `app.py`'s `pages` list, plus unit tests under
     `tests/unit/pipelines/ingest/<source>/` (see "Tests" above).
 - Both `pipelines` and `streamlit_dashboard` are deliberately independent (no shared
-  import between them, each has its own `DEFAULT_DATABASE_URL`/connection handling) -
+  import between them, each has its own environment-based connection handling) -
   this mirrors the existing isolation between `backend` and `pipelines` (see the
   Dockerfile comments in `packages/backend/Dockerfile` about not pulling in pipeline
   deps). Don't "fix" this duplication by introducing a shared db/config package unless

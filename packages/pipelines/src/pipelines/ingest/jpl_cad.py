@@ -10,7 +10,7 @@ Run directly: `python -m pipelines.ingest.jpl_cad`
 import argparse
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import psycopg
 import requests
@@ -93,7 +93,7 @@ def _to_float(value: str | None) -> float | None:
 def _parse_calendar_date(cd: str) -> datetime:
     # CAD "cd" field looks like "2029-Apr-13 21:46" (TDB, treated as UTC here).
     dt = datetime.strptime(cd, "%Y-%b-%d %H:%M")
-    return dt.replace(tzinfo=timezone.utc)
+    return dt.replace(tzinfo=UTC)
 
 
 def fetch_close_approaches(

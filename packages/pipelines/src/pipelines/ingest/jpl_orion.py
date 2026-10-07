@@ -12,7 +12,7 @@ import io
 import math
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pandas as pd
 import psycopg
@@ -91,10 +91,10 @@ def _parse_horizons_date(date_str: str) -> datetime:
     for fmt in ("%Y-%b-%d %H:%M:%S.%f", "%Y-%b-%d %H:%M:%S", "%Y-%b-%d %H:%M"):
         try:
             dt = datetime.strptime(clean, fmt)
-            return dt.replace(tzinfo=timezone.utc)
+            return dt.replace(tzinfo=UTC)
         except ValueError:
             pass
-    return datetime.fromisoformat(clean).replace(tzinfo=timezone.utc)
+    return datetime.fromisoformat(clean).replace(tzinfo=UTC)
 
 
 def fetch_orion_ephemeris(

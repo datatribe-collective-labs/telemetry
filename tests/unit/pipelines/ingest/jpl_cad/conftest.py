@@ -1,10 +1,9 @@
 """Fixtures for unit tests of pipelines.ingest.jpl_cad."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
-
 from pipelines.ingest.jpl_cad import CloseApproach
 
 
@@ -17,7 +16,7 @@ def make_close_approach():
             des="2024 AB",
             orbit_id="5",
             close_approach_jd=2460500.5,
-            close_approach_time=datetime(2029, 4, 13, 21, 46, tzinfo=timezone.utc),
+            close_approach_time=datetime(2029, 4, 13, 21, 46, tzinfo=UTC),
             dist_au=0.0421,
             dist_min_au=0.0400,
             dist_max_au=0.0450,
