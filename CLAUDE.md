@@ -32,7 +32,7 @@ uv sync --package <backend|pipelines|contracts|streamlit_dashboard>
 # bring up local TimescaleDB (the only long-running Docker service for local dev)
 docker compose up -d timescaledb
 
-# run the JPL close-approach ingest job
+# run an ingest job (one module per source: jpl_cad, jpl_orion, jpl_dsn_geometry, donki)
 uv run --package pipelines python -m pipelines.ingest.jpl_cad
 
 # run the dashboard
@@ -57,7 +57,9 @@ mirroring the source path:
   files (which also means tests can't import each other - share helpers via
   fixtures).
 
-Only `pipelines/ingest/jpl_cad.py` has tests so far.
+Unit tests exist for the `jpl_cad`, `jpl_dsn_geometry` and `donki` ingest
+modules and for `transforms/sgps_proton_flux`; `jpl_orion` has only an
+integration test (`tests/integration/test_orion_feature.py`).
 
 ```
 # Docker test environment (compose service `tests`, profile "test")
@@ -96,8 +98,10 @@ on disk that breaks subsequent native Windows `uv run` with `Access is denied` o
    _planned_ TypeScript + Superset dashboard that does not exist yet.
 2. **JPL data-source dashboard** ("Telemetry Project - Data Tribe", `packages/pipelines`
    - `packages/streamlit_dashboard`): a working, lightweight ETL + Streamlit app that
-     ingests JPL SSD API data (currently only Close-Approach Data / CAD) into TimescaleDB
-     and visualizes it. This is the only end-to-end functional path in the repo, and the
+     ingests public NASA/JPL data into TimescaleDB and visualizes it: JPL Close-Approach
+     Data (`jpl_cad`), Artemis II Orion ephemeris (`jpl_orion`), Orion look angles from
+     each DSN complex (`jpl_dsn_geometry`) - all JPL SSD APIs - plus NASA DONKI space-weather
+     events (`donki`). This is the only end-to-end functional path in the repo, and the
      first step toward effort #1 - proving out the ingest -> store -> visualize pattern at
      small scale. It intentionally does **not** depend on `contracts` or `backend` yet, and
      has no formal ODCS contract - see the root `README.md` for the full architecture
@@ -108,8 +112,13 @@ When asked to "add a data source" or "add a page," it almost always means effort
 ## Architecture of the working pipeline (effort #2)
 
 ```
-JPL SSD CAD API --> pipelines.ingest.<source> --> TimescaleDB --> streamlit_dashboard
+JPL SSD / NASA APIs --> pipelines.ingest.<source> --> TimescaleDB --> streamlit_dashboard
 ```
+
+Horizons gotcha: VECTORS tables are stamped in **TDB** and OBSERVER tables in
+**UT** (~69 s apart in 2026). `jpl_dsn_geometry` stores UT; `jpl_orion`
+currently stores its TDB calendar dates as if they were UTC, so joins between
+the two are off by ~69 s.
 
 - **`packages/pipelines/src/pipelines/db.py`**: only the shared `get_connection()`.
   Each ingest module owns its own table schema and setup - see
