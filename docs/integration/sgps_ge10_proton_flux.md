@@ -145,7 +145,9 @@ that incompatibility. Do not silently create or edit a contract.
 3. Live archive integration test, using the repository's actual pytest path
    and `uv run --package pipelines ...` invocation.
 4. Flight-window replay from liftoff through splashdown.
-5. NOAA operational ≥10 MeV comparison (Gate C).
+5. NOAA operational ≥10 MeV comparison (Gate C). Reference data: the
+   `goes_integral_protons` table (`p10_pfu`), ingested by
+   `pipelines.ingest.iswa_goes_protons`.
 6. DONKI SEP correlation.
 7. GOES-to-Orion proxy limitations documented before any Orion-local dose
    interpretation.
