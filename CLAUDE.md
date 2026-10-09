@@ -32,7 +32,7 @@ uv sync --package <backend|pipelines|contracts|streamlit_dashboard>
 # bring up local TimescaleDB (the only long-running Docker service for local dev)
 docker compose up -d timescaledb
 
-# run the JPL close-approach ingest job
+# run an ingest job (one module per source: jpl_cad, jpl_orion, jpl_dsn_geometry, donki)
 uv run --package pipelines python -m pipelines.ingest.jpl_cad
 
 # run the dashboard
@@ -110,6 +110,11 @@ When asked to "add a data source" or "add a page," it almost always means effort
 ```
 public JSON API --> pipelines.ingest.<source> --> TimescaleDB --> streamlit_dashboard
 ```
+
+Horizons gotcha: VECTORS tables are stamped in **TDB** and OBSERVER tables in
+**UT** (~69 s apart in 2026). `jpl_dsn_geometry` stores UT; `jpl_orion`
+currently stores its TDB calendar dates as if they were UTC, so joins between
+the two are off by ~69 s.
 
 - **`packages/pipelines/src/pipelines/db.py`**: only the shared `get_connection()`.
   Each ingest module owns its own table schema and setup - see
