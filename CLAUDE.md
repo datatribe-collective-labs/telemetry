@@ -57,9 +57,7 @@ mirroring the source path:
   files (which also means tests can't import each other - share helpers via
   fixtures).
 
-Unit tests exist for the `jpl_cad`, `jpl_dsn_geometry` and `donki` ingest
-modules and for `transforms/sgps_proton_flux`; `jpl_orion` has only an
-integration test (`tests/integration/test_orion_feature.py`).
+Unit tests exist for the `jpl_cad`, `donki` and `iswa_goes_protons` ingest modules.
 
 ```
 # Docker test environment (compose service `tests`, profile "test")
@@ -98,10 +96,8 @@ on disk that breaks subsequent native Windows `uv run` with `Access is denied` o
    _planned_ TypeScript + Superset dashboard that does not exist yet.
 2. **JPL data-source dashboard** ("Telemetry Project - Data Tribe", `packages/pipelines`
    - `packages/streamlit_dashboard`): a working, lightweight ETL + Streamlit app that
-     ingests public NASA/JPL data into TimescaleDB and visualizes it: JPL Close-Approach
-     Data (`jpl_cad`), Artemis II Orion ephemeris (`jpl_orion`), Orion look angles from
-     each DSN complex (`jpl_dsn_geometry`) - all JPL SSD APIs - plus NASA DONKI space-weather
-     events (`donki`). This is the only end-to-end functional path in the repo, and the
+     ingests public NASA/JPL APIs (JPL CAD, JPL Horizons for Orion, NASA DONKI, and
+     GOES proton flux via NASA iSWA) into TimescaleDB and visualizes it. This is the only end-to-end functional path in the repo, and the
      first step toward effort #1 - proving out the ingest -> store -> visualize pattern at
      small scale. It intentionally does **not** depend on `contracts` or `backend` yet, and
      has no formal ODCS contract - see the root `README.md` for the full architecture
@@ -112,7 +108,7 @@ When asked to "add a data source" or "add a page," it almost always means effort
 ## Architecture of the working pipeline (effort #2)
 
 ```
-JPL SSD / NASA APIs --> pipelines.ingest.<source> --> TimescaleDB --> streamlit_dashboard
+public JSON API --> pipelines.ingest.<source> --> TimescaleDB --> streamlit_dashboard
 ```
 
 Horizons gotcha: VECTORS tables are stamped in **TDB** and OBSERVER tables in
@@ -158,3 +154,13 @@ the two are off by ~69 s.
 Fireball, NHATS, Scout, Horizons, etc.) - "the JPL API" is ambiguous, always confirm
 which one. Fair-use policy across the family: one request at a time, no guaranteed
 availability - ingest modules must stay sequential, no concurrent requests.
+
+## NASA iSWA HAPI notes
+
+`pipelines.ingest.iswa_goes_protons` reads GOES proton flux from NASA CCMC iSWA's
+HAPI 2.0 server (`https://iswa.gsfc.nasa.gov/IswaSystemWebApp/hapi/`). HAPI
+gotchas: requested `parameters` must be in the dataset's `/info` order (else error
+1411); errors arrive as a JSON `status` object (`1200`/`1201` = OK); fill values are
+declared per parameter as strings (`"-100000"`, `"null"`). It is NOAA's real-time
+product (provisional). NASA's CDAWeb HAPI (`cdaweb.gsfc.nasa.gov/hapi`) has OMNI
+solar-wind data, but its GOES proton columns are all fill values for 2026.

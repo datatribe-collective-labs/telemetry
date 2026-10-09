@@ -22,18 +22,22 @@ flowchart LR
     Source1(["Data Source 1\nJPL Close-Approach Data (CAD)"])
     Source2(["Data Source 2\nJPL Orion Telemetry"])
     Source3(["Data Source 3\nNASA DONKI Space Weather"])
+    Source4(["Data Source 4\nGOES Proton Flux (NASA iSWA)"])
     Ingest1["Ingest Job\npipelines.ingest.jpl_cad"]
     Ingest2["Ingest Job\npipelines.ingest.jpl_orion"]
     Ingest3["Ingest Job\npipelines.ingest.donki"]
+    Ingest4["Ingest Job\npipelines.ingest.iswa_goes_protons"]
     DB[("TimescaleDB\n")]
     Dash["Streamlit Dashboard\n"]
 
     Source1 --> Ingest1
     Source2 --> Ingest2
     Source3 --> Ingest3
+    Source4 --> Ingest4
     Ingest1 --> DB
     Ingest2 --> DB
     Ingest3 --> DB
+    Ingest4 --> DB
     DB --> Dash
 
     subgraph Docker["Docker"]
@@ -46,6 +50,7 @@ flowchart LR
 1. **[JPL Close-Approach Data (CAD) API](https://ssd-api.jpl.nasa.gov/doc/cad.html)** — Upcoming and past close approaches of asteroids/comets to Earth
 2. **[JPL Horizons / Orion](https://ssd-api.jpl.nasa.gov/horizons.html)** — Artemis II Orion spacecraft telemetry
 3. **[NASA CCMC DONKI API](https://ccmc.gsfc.nasa.gov/DONKI-API/get/)** — Space weather events (CME, SEP, FLR, GST, HSS, etc.)
+4. **[NASA CCMC iSWA HAPI](https://iswa.gsfc.nasa.gov/IswaSystemWebApp/hapi/)** — GOES integral proton flux (≥1 … ≥500 MeV, 5-minute)
 
 Each source has its own ingest job, database table, and dashboard page.
 
@@ -88,6 +93,12 @@ uv run --package pipelines python -m pipelines.ingest.donki
 #          --request-delay 0.2
 ```
 
+**GOES Proton Flux (NASA iSWA):**
+```bash
+uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons
+# Options: --start 2026-04-01T00:00:00Z --end 2026-04-12T00:00:00Z
+```
+
 ### 3. Launch the dashboard
 ```bash
 uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/src/streamlit_dashboard/app.py
@@ -100,12 +111,13 @@ Then open **http://localhost:8501** in your browser.
 - **Close Approaches** — JPL CAD asteroid/comet close approaches
 - **Artemis II Orion** — Orion spacecraft telemetry
 - **NASA DONKI** — Space weather events (CME, SEP, FLR, GST, HSS, etc.)
+- **GOES Proton Flux** — Integral proton flux vs. the NOAA S1 radiation-storm threshold
 
 Configure via the `DATABASE_URL` environment variable (see `.env.example`).
 
 ## Checking the ingested data
 
-The data lives in three tables inside the `timescaledb` container. Query them directly with `psql` via Docker - no local client needed:
+The data lives in four tables inside the `timescaledb` container. Query them directly with `psql` via Docker - no local client needed:
 
 **JPL Close Approaches:**
 ```
@@ -123,6 +135,11 @@ docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(
 docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM donki_events;"
 docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT event_type, count(*) FROM donki_events GROUP BY event_type ORDER BY count DESC;"
 docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT event_type, event_id, event_time, start_time FROM donki_events ORDER BY COALESCE(event_time, start_time) DESC LIMIT 10;"
+```
+
+**GOES Proton Flux:**
+```
+docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*), min(time), max(time), max(p10_pfu) FROM goes_integral_protons;"
 ```
 
 Or connect with any Postgres GUI client (DBeaver, TablePlus, pgAdmin, the
@@ -237,4 +254,31 @@ DONKI events provide space weather context for:
 - **Orion telemetry** — SEP/GST events correlate with radiation sensor spikes
 - **Close approaches** — CME/HSS affect solar wind density (drag, comms)
 
-All three sources share `TIMESTAMPTZ` columns enabling temporal joins for multi-source analysis.
+All sources share `TIMESTAMPTZ` columns enabling temporal joins for multi-source analysis.
+
+---
+
+## GOES Proton Flux (NASA iSWA) — Details
+
+Integral proton flux from the primary GOES satellite, read from the NASA CCMC
+iSWA [HAPI](https://hapi-server.org/) service (dataset `goesp_part_flux_P5M`)
+as JSON. It is the radiation-environment input for the digital twin, and the
+"NOAA operational ≥10 MeV comparison" reference named in
+`docs/integration/sgps_ge10_proton_flux.md`.
+
+- **Real-time product.** This is NOAA's real-time feed - provisional, not the
+  reprocessed science archive. The ingest itself runs on demand; the feed is
+  current to within minutes, so a scheduled run can keep the table near-live.
+- **Satellite per row.** The satellite behind the "primary" proton feed can
+  change; it is stored in `proton_satellite` (GOES-18 for the Artemis II window).
+- **Units.** All `p*_pfu` columns are integral flux in pfu
+  (protons / cm² · s · sr). HAPI fill values (`-100000`, `"null"`) are stored as `NULL`.
+- **HAPI quirk.** Requested parameters must follow the dataset's own order,
+  otherwise the API returns error 1411 - see `PROTON_PARAMETERS` in the ingest module.
+
+The `goes_integral_protons` hypertable has one row per 5-minute sample (`time`
+primary key), so re-running any range updates rows in place.
+
+The **GOES Proton Flux** dashboard page shows a log-scale chart of the selected
+energy channels with the NOAA S1 threshold (10 pfu at ≥10 MeV), the peak ≥10
+MeV flux and its NOAA S-scale level, and the raw table.
