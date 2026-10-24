@@ -84,7 +84,7 @@ else:
         st.metric("Mission Elapsed Time (MET)", met_str)
         
         # Mission phase from planned attitude
-        from physics_models.state_engine.planned_attitude import resolve_attitude
+        from contracts.planned_attitude import resolve_attitude
         attitude_mode, mode_def = resolve_attitude(met)
         st.caption(f"Attitude: **{attitude_mode.value}** — {mode_def.get('description', 'N/A')}")
     
