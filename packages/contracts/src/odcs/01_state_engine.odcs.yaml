@@ -36,12 +36,16 @@ servers:
     environment: production
     type: kafka
     host: ${KAFKA_BOOTSTRAP_SERVERS}
-    topic: ${KAFKA_TRAJECTORY_TOPIC}
+    customProperties:
+      - property: topic
+        value: ${KAFKA_TRAJECTORY_TOPIC}
   - server: ${KAFKA_REPLAY_SERVER}
     environment: replay
     type: kafka
     host: ${KAFKA_BOOTSTRAP_SERVERS}
-    topic: ${KAFKA_TRAJECTORY_REPLAY_TOPIC}
+    customProperties:
+      - property: topic
+        value: ${KAFKA_TRAJECTORY_REPLAY_TOPIC}
 
 slaProperties:
   - property: latency
@@ -97,8 +101,9 @@ schema:
             mustBe: 0
           - type: text
             description: >
-              Must be finite. At Artemis II max Earth distance (406,773 km),
-              |x|² + |y|² + |z|² ≤ (410,000)² km². No constraint on sign.
+              Must be finite. At Artemis II max geocentric Earth range (413,144 km,
+              OEM planning arcs), |x|² + |y|² + |z|² ≤ (420,000)² km². No constraint on sign.
+              (NASA press's ~406,771 km figure is Earth-surface distance — see earth_distance_km.)
 
       - id: y_km
         name: y_km
@@ -135,7 +140,8 @@ schema:
           - type: text
             description: >
               Scalar speed (√vx²+vy²+vz²) must be ≥ 0 km/s.
-              Maximum observed during Artemis II re-entry: ~10.97 km/s (~39,490 km/h).
+              Entry-interface speed in OEM planning arc 2026-04-09: 10.999 km/s (~39,600 km/h);
+              NASA preflight material gives ~24,500 mph (~10.95 km/s). Use ~11 km/s as reference.
               Values above 12 km/s are physically implausible for Orion in cislunar space.
 
       - id: vy_kms
@@ -182,8 +188,8 @@ schema:
               Valid range: 0.995 ≤ distance_from_sun_au ≤ 1.005.
               Values outside this range indicate a data source error.
 
-      - id: solar_flux_W_m2
-        name: solar_flux_W_m2
+      - id: solar_flux_w_m2
+        name: solar_flux_w_m2
         businessName: Solar flux at spacecraft (W/m²)
         logicalType: number
         physicalType: DOUBLE
@@ -274,8 +280,11 @@ schema:
             description: >
               Must be > 0. Must be consistent with position vector:
               |earth_distance_km - √(x²+y²+z²)| < 1 km.
-              For Artemis II: minimum ~6,363 km (surface + LEO altitude),
-              maximum observed 413,144 km (from OEM, post-splashdown arc).
+              GEOMETRIC DEFINITION: geocentric (Earth-center to spacecraft) range.
+              Measured maximum in OEM planning arcs: 413,144 km at lunar flyby
+              (2026-04-06). NASA press quotes ~406,771 km (252,756 mi) as maximum
+              Earth distance — that is Earth-SURFACE to spacecraft (≈ geocentric
+              range minus Earth radius 6,371 km); do not mix the two definitions here.
               Operationally relevant range: 6,500 ≤ earth_distance_km ≤ 410,000.
 
       - id: dsn_visibility

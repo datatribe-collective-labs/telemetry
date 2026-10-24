@@ -37,7 +37,9 @@ servers:
     environment: production
     type: kafka
     host: ${KAFKA_BOOTSTRAP_SERVERS}
-    topic: ${KAFKA_TELEMETRY_TOPIC}
+    customProperties:
+      - property: topic
+        value: ${KAFKA_TELEMETRY_TOPIC}
 
 schema:
   - id: thermal_output
@@ -60,8 +62,8 @@ schema:
           - metric: nullValues
             mustBe: 0
 
-      - id: temp_sun_face_K
-        name: temp_sun_face_K
+      - id: temp_sun_face_k
+        name: temp_sun_face_k
         businessName: Sun-facing surface temperature (K)
         logicalType: number
         physicalType: DOUBLE
@@ -83,8 +85,8 @@ schema:
               Values below 3 K violate thermodynamic law.
               Values above 450 K indicate model runaway or missing radiative term.
 
-      - id: temp_shadow_face_K
-        name: temp_shadow_face_K
+      - id: temp_shadow_face_k
+        name: temp_shadow_face_k
         businessName: Shadow-facing surface temperature (K)
         logicalType: number
         physicalType: DOUBLE
@@ -106,8 +108,8 @@ schema:
               Values below 100 K are physically possible in deep shadow but indicate
               a very cold transient; below 3 K is impossible.
 
-      - id: temp_electronics_bay_K
-        name: temp_electronics_bay_K
+      - id: temp_electronics_bay_k
+        name: temp_electronics_bay_k
         businessName: Electronics bay temperature (K)
         logicalType: number
         physicalType: DOUBLE
@@ -133,8 +135,8 @@ schema:
               The contract cannot be relaxed to fit a model that violates these limits —
               the limits come from hardware, not from this simulation.
 
-      - id: q_solar_absorbed_W
-        name: q_solar_absorbed_W
+      - id: q_solar_absorbed_w
+        name: q_solar_absorbed_w
         businessName: Solar flux absorbed by sun-face node (W)
         logicalType: number
         physicalType: DOUBLE
@@ -154,8 +156,8 @@ schema:
               do not establish the modeled radiating/absorbing area and optical properties.
               Enforce the input-derived equation instead [Source #2].
 
-      - id: q_radiated_W
-        name: q_radiated_W
+      - id: q_radiated_w
+        name: q_radiated_w
         businessName: Total radiative heat rejection (W)
         logicalType: number
         physicalType: DOUBLE
@@ -175,8 +177,8 @@ schema:
               balance must close; do not require q_radiated = q_solar + q_internal
               during transients [Source #1].
 
-      - id: q_internal_W
-        name: q_internal_W
+      - id: q_internal_w
+        name: q_internal_w
         businessName: Internal power dissipation (W)
         logicalType: number
         physicalType: DOUBLE
@@ -211,8 +213,8 @@ schema:
               obey that hysteresis. Do not hard-code 268 K or infer a heater command
               from an unverified electronics-bay limit [External: Orion heater/control specification].
 
-      - id: heater_power_W
-        name: heater_power_W
+      - id: heater_power_w
+        name: heater_power_w
         businessName: Heater power draw (W)
         logicalType: number
         physicalType: DOUBLE

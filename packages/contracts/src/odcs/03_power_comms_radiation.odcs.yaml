@@ -30,7 +30,9 @@ servers:
     environment: production
     type: kafka
     host: ${KAFKA_BOOTSTRAP_SERVERS}
-    topic: ${KAFKA_TELEMETRY_TOPIC}
+    customProperties:
+      - property: topic
+        value: ${KAFKA_TELEMETRY_TOPIC}
 
 schema:
   - id: power_output
@@ -51,8 +53,8 @@ schema:
           - metric: nullValues
             mustBe: 0
 
-      - id: solar_array_power_W
-        name: solar_array_power_W
+      - id: solar_array_power_w
+        name: solar_array_power_w
         businessName: Solar array gross output (W)
         logicalType: number
         physicalType: DOUBLE
@@ -98,8 +100,8 @@ schema:
               0.28 or 0.168 as physical limits. [Source #8 provides degradation
               methodology but not a universal 1%/krad or 60% floor.]
 
-      - id: total_load_W
-        name: total_load_W
+      - id: total_load_w
+        name: total_load_w
         businessName: Total spacecraft electrical load (W)
         logicalType: number
         physicalType: DOUBLE
@@ -140,15 +142,17 @@ schema:
               a fundamental model error. The contract cannot be widened to accommodate
               integration bugs — fix the model.
 
-      - id: battery_voltage_V
-        name: battery_voltage_V
+      - id: battery_voltage_v
+        name: battery_voltage_v
         businessName: Battery bus voltage (V)
         logicalType: number
         physicalType: DOUBLE
         required: true
         description: >
           Model bus voltage. 28 V nominal and the linear V-SoC relationship are
-          model assumptions unless an Orion EPS/battery specification is supplied.
+          MODEL_ASSUMPTION values unless an Orion EPS/battery specification is supplied.
+          Note: ESA's published 120 V figure is the solar-array DISTRIBUTION voltage
+          from the PCDU — it must not be used to validate a 28 V battery bus.
         quality:
           - metric: nullValues
             mustBe: 0
@@ -160,8 +164,8 @@ schema:
               [External: Orion EPS/battery electrical specification]. The linear V-SoC
               equation is not a Li-ion physics law.
 
-      - id: battery_current_A
-        name: battery_current_A
+      - id: battery_current_a
+        name: battery_current_a
         businessName: Battery current (A)
         logicalType: number
         physicalType: DOUBLE
@@ -180,8 +184,8 @@ schema:
               At 28 V, 4,000 W load with no generation: ~−143 A discharge.
               Values outside [−200, +200] A are implausible for Orion's battery design.
 
-      - id: net_power_W
-        name: net_power_W
+      - id: net_power_w
+        name: net_power_w
         businessName: Net spacecraft electrical power before battery flow (W)
         logicalType: number
         physicalType: DOUBLE
@@ -199,8 +203,8 @@ schema:
               Must equal solar_array_power_W minus total_load_W and any explicitly declared
               additional electrical losses/loads. Battery-current sign must be consistent.
 
-      - id: available_power_W
-        name: available_power_W
+      - id: available_power_w
+        name: available_power_w
         businessName: Available power headroom (W)
         logicalType: number
         physicalType: DOUBLE
@@ -275,7 +279,9 @@ servers:
     environment: production
     type: kafka
     host: ${KAFKA_BOOTSTRAP_SERVERS}
-    topic: ${KAFKA_TELEMETRY_TOPIC}
+    customProperties:
+      - property: topic
+        value: ${KAFKA_TELEMETRY_TOPIC}
 
 schema:
   - id: comms_output
@@ -296,8 +302,8 @@ schema:
           - metric: nullValues
             mustBe: 0
 
-      - id: eirp_dBW
-        name: eirp_dBW
+      - id: eirp_dbw
+        name: eirp_dbw
         businessName: EIRP — effective isotropic radiated power (dBW)
         logicalType: number
         physicalType: DOUBLE
@@ -314,8 +320,8 @@ schema:
               Must be derived from the configured RF power and spacecraft antenna gain.
               No fixed EIRP validity range is asserted until Orion transmitter and
               antenna specifications are supplied.
-      - id: free_space_path_loss_dB
-        name: free_space_path_loss_dB
+      - id: free_space_path_loss_db
+        name: free_space_path_loss_db
         businessName: Free-space path loss (dB)
         logicalType: number
         physicalType: DOUBLE
@@ -332,8 +338,8 @@ schema:
               Must equal the Friis free-space calculation from the current range and
               configured carrier. For 2.27–2.30 GHz and 6,500–410,000 km the calculated
               envelope is approximately 175.83–211.94 dB [Source #4].
-      - id: received_power_dBW
-        name: received_power_dBW
+      - id: received_power_dbw
+        name: received_power_dbw
         businessName: Received power at DSN (dBW)
         logicalType: number
         physicalType: DOUBLE
@@ -350,8 +356,8 @@ schema:
             description: >
               Must satisfy the configured link-budget equation. DSN gain and
               miscellaneous losses must be explicit model inputs.
-      - id: eb_n0_dB
-        name: eb_n0_dB
+      - id: eb_n0_db
+        name: eb_n0_db
         businessName: Eb/N0 — bit energy to noise density ratio (dB)
         logicalType: number
         physicalType: DOUBLE
@@ -368,8 +374,8 @@ schema:
               State consistency must use configured required_eb_n0_dB. No universal
               4.5 dB threshold, 7.5 dB nominal threshold, −200 dBW/Hz floor or 100 dB
               ceiling is asserted without a configuration-specific link budget [Source #4].
-      - id: link_margin_dB
-        name: link_margin_dB
+      - id: link_margin_db
+        name: link_margin_db
         businessName: Link margin above required Eb/N0 (dB)
         logicalType: number
         physicalType: DOUBLE
@@ -479,7 +485,9 @@ servers:
     environment: production
     type: kafka
     host: ${KAFKA_BOOTSTRAP_SERVERS}
-    topic: ${KAFKA_TELEMETRY_TOPIC}
+    customProperties:
+      - property: topic
+        value: ${KAFKA_TELEMETRY_TOPIC}
 
 schema:
   - id: radiation_output

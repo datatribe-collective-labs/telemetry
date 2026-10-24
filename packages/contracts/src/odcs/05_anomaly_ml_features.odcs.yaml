@@ -37,7 +37,9 @@ servers:
     environment: production
     type: kafka
     host: ${KAFKA_BOOTSTRAP_SERVERS}
-    topic: ${KAFKA_EVENTS_TOPIC}
+    customProperties:
+      - property: topic
+        value: ${KAFKA_EVENTS_TOPIC}
 
 slaProperties:
   - property: latency
@@ -248,8 +250,8 @@ schema:
           - metric: nullValues
             mustBe: 0
 
-      - id: ae_r_RE
-        name: r_RE
+      - id: ae_r_re
+        name: r_re
         businessName: Spacecraft position in Earth radii at event time
         logicalType: number
         physicalType: DOUBLE
@@ -344,7 +346,9 @@ servers:
     environment: production
     type: kafka
     host: ${KAFKA_BOOTSTRAP_SERVERS}
-    topic: ${KAFKA_ML_FEATURES_TOPIC}
+    customProperties:
+      - property: topic
+        value: ${KAFKA_ML_FEATURES_TOPIC}
   - server: ${OBJECT_STORAGE_TRAINING_SERVER}
     environment: training
     type: object_storage
@@ -506,8 +510,8 @@ schema:
 
       # ── Context features ──
 
-      - id: ml_r_RE_norm
-        name: r_RE_norm
+      - id: ml_r_re_norm
+        name: r_re_norm
         businessName: Earth radii distance, normalised
         logicalType: number
         physicalType: FLOAT
@@ -612,8 +616,8 @@ schema:
       # These are the key anomaly signals. Zero = matches physics expectation.
       # The ML model learns the distribution of these residuals during normal ops.
 
-      - id: ml_temp_sun_residual_K
-        name: temp_sun_residual_K
+      - id: ml_temp_sun_residual_k
+        name: temp_sun_residual_k
         businessName: Sun-face temperature residual vs Stefan-Boltzmann equilibrium (K)
         logicalType: number
         physicalType: FLOAT
@@ -633,8 +637,8 @@ schema:
               ±20 K and ±40 K are anomaly-detection heuristics, not physics limits.
               Keep them configurable and do not use them as contract validity bounds.
 
-      - id: ml_link_margin_residual_dB
-        name: link_margin_residual_dB
+      - id: ml_link_margin_residual_db
+        name: link_margin_residual_db
         businessName: Link margin residual vs Friis prediction (dB)
         logicalType: number
         physicalType: FLOAT
@@ -674,8 +678,8 @@ schema:
               configurable. A ratio >1 is not physically impossible by itself because the
               expected-output model may be conservative or incomplete.
 
-      - id: ml_voltage_residual_V
-        name: voltage_residual_V
+      - id: ml_voltage_residual_v
+        name: voltage_residual_v
         businessName: Battery voltage residual vs SoC model (V)
         logicalType: number
         physicalType: FLOAT
@@ -723,8 +727,8 @@ schema:
 
       # ── Rate-of-change features ──
 
-      - id: ml_temp_elec_rate_K_min
-        name: temp_elec_rate_K_min
+      - id: ml_temp_elec_rate_k_min
+        name: temp_elec_rate_k_min
         businessName: Electronics temperature rate of change (K/min)
         logicalType: number
         physicalType: FLOAT
