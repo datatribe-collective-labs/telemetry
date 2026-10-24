@@ -197,16 +197,16 @@ if not selected:
     st.info("Select at least one energy channel.")
 else:
     fig = go.Figure()
-    for column in CHANNELS:
+    for column, channel_name in CHANNELS.items():
         if column not in selected:
             continue
         fig.add_trace(
             go.Scatter(
                 x=df["time"],
                 y=df[column],
-                name=CHANNELS[column],
+                name=channel_name,
                 mode="lines",
-                line=dict(color=CHANNEL_COLORS[column], width=2),
+                line={"color": CHANNEL_COLORS[column], "width": 2},
                 hovertemplate="%{y:.3g} pfu",
             )
         )
@@ -225,7 +225,7 @@ else:
         showarrow=False,
     )
     if "p10_pfu" in selected:
-        fig.add_hline(y=10, line=dict(color="#898781", width=1, dash="dash"))
+        fig.add_hline(y=10, line={"color": "#898781", "width": 1, "dash": "dash"})
         # Not add_hline(annotation_text=...): on a log axis Plotly places that
         # label at 10**y, which stretches the axis to 1e10.
         fig.add_annotation(
@@ -235,11 +235,11 @@ else:
             showarrow=False,
         )
     fig.update_layout(
-        yaxis=dict(type="log", title="Protons / cm² · s · sr (pfu)"),
-        xaxis=dict(title="Time (UTC)"),
+        yaxis={"type": "log", "title": "Protons / cm² · s · sr (pfu)"},
+        xaxis={"title": "Time (UTC)"},
         hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
-        margin=dict(l=0, r=0, t=40, b=0),
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "x": 0},
+        margin={"l": 0, "r": 0, "t": 40, "b": 0},
     )
     st.plotly_chart(fig, width="stretch")
 

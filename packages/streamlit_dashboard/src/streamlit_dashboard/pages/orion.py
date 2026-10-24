@@ -42,7 +42,7 @@ def fetch_moon_ephemeris(start_dt: datetime, stop_dt: datetime) -> pd.DataFrame:
                 "range_km": vec["range"] * 149597870.7,
             }
         )
-    except Exception:
+    except Exception:  # noqa: BLE001 - dashboard fallback: render empty chart on any backend error
         return pd.DataFrame()
 
 
@@ -124,14 +124,14 @@ else:
             y=df["y_km"],
             z=df["z_km"],
             mode="lines+markers",
-            marker=dict(
-                size=3,
-                color=df["speed_kms"],
-                colorscale="Plasma",
-                colorbar=dict(title="Speed (km/s)", len=0.7),
-                showscale=True,
-            ),
-            line=dict(color="#00D2FF", width=4),
+            marker={
+                "size": 3,
+                "color": df["speed_kms"],
+                "colorscale": "Plasma",
+                "colorbar": {"title": "Speed (km/s)", "len": 0.7},
+                "showscale": True,
+            },
+            line={"color": "#00D2FF", "width": 4},
             name="Orion Path (-1024)",
             hovertext=df["epoch"].dt.strftime("%Y-%m-%d %H:%M UTC"),
             hovertemplate="<b>Orion</b><br>Epoch: %{hovertext}<br>X: %{x:,.0f} km<br>Y: %{y:,.0f} km<br>Z: %{z:,.0f} km<extra></extra>",
@@ -147,7 +147,7 @@ else:
                 y=df_moon["y_km"],
                 z=df_moon["z_km"],
                 mode="lines",
-                line=dict(color="gray", width=3, dash="dash"),
+                line={"color": "gray", "width": 3, "dash": "dash"},
                 name="Moon Orbit (301)",
                 hovertext=df_moon["epoch"].dt.strftime("%Y-%m-%d %H:%M UTC"),
                 hovertemplate="<b>Moon</b><br>Epoch: %{hovertext}<br>Range: %{x:,.0f} km<extra></extra>",
@@ -159,7 +159,7 @@ else:
                 y=[df_moon["y_km"].iloc[-1]],
                 z=[df_moon["z_km"].iloc[-1]],
                 mode="markers+text",
-                marker=dict(size=8, color="lightgray"),
+                marker={"size": 8, "color": "lightgray"},
                 name="Moon Position",
                 text=["Moon"],
                 textposition="top center",
@@ -167,14 +167,14 @@ else:
         )
 
     fig_3d.update_layout(
-        scene=dict(
-            xaxis_title="X (km)",
-            yaxis_title="Y (km)",
-            zaxis_title="Z (km)",
-            aspectmode="data",
-        ),
+        scene={
+            "xaxis_title": "X (km)",
+            "yaxis_title": "Y (km)",
+            "zaxis_title": "Z (km)",
+            "aspectmode": "data",
+        },
         height=700,
-        margin=dict(l=0, r=0, t=30, b=0),
+        margin={"l": 0, "r": 0, "t": 30, "b": 0},
     )
     st.plotly_chart(fig_3d, width="stretch")
 
@@ -191,7 +191,7 @@ else:
             title="Orion Range from Earth over Time",
         )
         fig_range.update_traces(line_color="#4B9CD3", line_width=2.5)
-        fig_range.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+        fig_range.update_layout(margin={"l": 0, "r": 0, "t": 40, "b": 0})
         st.plotly_chart(fig_range, width="stretch")
 
     with chart_col2:
@@ -204,7 +204,7 @@ else:
             title="Orion Speed Magnitude over Time",
         )
         fig_speed.update_traces(line_color="#FF4B4B", line_width=2.5)
-        fig_speed.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+        fig_speed.update_layout(margin={"l": 0, "r": 0, "t": 40, "b": 0})
         st.plotly_chart(fig_speed, width="stretch")
 
     # Specific Orbital Energy Chart
@@ -227,7 +227,7 @@ else:
             annotation_text="Parabolic Escape Threshold (epsilon = 0)",
         )
         fig_energy.update_traces(line_color="#00CC96", line_width=2.5)
-        fig_energy.update_layout(height=400, margin=dict(l=0, r=0, t=40, b=0))
+        fig_energy.update_layout(height=400, margin={"l": 0, "r": 0, "t": 40, "b": 0})
         st.plotly_chart(fig_energy, width="stretch")
 
     # Telemetry Data Table

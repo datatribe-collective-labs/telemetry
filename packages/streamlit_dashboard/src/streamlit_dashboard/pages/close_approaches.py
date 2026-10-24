@@ -3,7 +3,7 @@
 Reads the `close_approaches` table populated by `pipelines.ingest.jpl_cad`.
 """
 
-from datetime import date, timedelta
+from datetime import UTC, datetime, timedelta
 
 import plotly.express as px
 import streamlit as st
@@ -16,7 +16,7 @@ st.caption("Near-Earth object close approaches, ingested from the JPL SSD CAD AP
 
 with st.sidebar:
     st.header("Filters")
-    today = date.today()
+    today = datetime.now(UTC).date()
     date_from, date_to = st.date_input(
         "Date range",
         value=(today, today + timedelta(days=60)),
@@ -64,6 +64,6 @@ else:
         },
         title="Close approach distance over time",
     )
-    fig.update_traces(marker=dict(size=9, line=dict(width=0)))
-    fig.update_layout(margin=dict(l=0, r=0, t=40, b=0))
+    fig.update_traces(marker={"size": 9, "line": {"width": 0}})
+    fig.update_layout(margin={"l": 0, "r": 0, "t": 40, "b": 0})
     st.plotly_chart(fig, width="stretch")

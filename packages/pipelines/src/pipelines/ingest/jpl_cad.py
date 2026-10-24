@@ -92,7 +92,7 @@ def _to_float(value: str | None) -> float | None:
 
 def _parse_calendar_date(cd: str) -> datetime:
     # CAD "cd" field looks like "2029-Apr-13 21:46" (TDB, treated as UTC here).
-    dt = datetime.strptime(cd, "%Y-%b-%d %H:%M")
+    dt = datetime.strptime(cd, "%Y-%b-%d %H:%M")  # noqa: DTZ007 - tz attached on next line
     return dt.replace(tzinfo=UTC)
 
 
