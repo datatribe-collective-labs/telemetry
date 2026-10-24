@@ -4,38 +4,50 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A telemetry project working toward a full spacecraft digital twin for NASA Artemis II /
+A telemetry project building a spacecraft digital twin for NASA Artemis II /
 Orion - real-time physics simulation (thermal, power, comms, radiation) fed by JPL
 Horizons ephemeris and NASA telemetry, streamed through Kafka, validated against the
-ODCS contracts in `packages/contracts/src/odcs/`, and surfaced on a dashboard. That
-target is fully specified but almost entirely unbuilt.
+ODCS contracts in `packages/contracts/src/odcs/`, and surfaced on a dashboard.
 
-Rather than build toward it directly, the strategy is incremental: prove the pattern
-small, then scale it up. The current working piece ("Telemetry Project - Data Tribe")
-ingests a public API (JPL Solar System Dynamics data) and shows it on a dashboard -
-the simplest possible version of the same ingest -> store -> visualize shape the
-digital twin will eventually need at much larger scale. It's an early step, not a
-permanent side-project, and the two don't share code yet - see "Two efforts in this
-repo" below before assuming any two packages are meant to talk to each other.
+Effort #1 (the digital twin) is partially built and runnable end-to-end (see
+`RUN_SERVICES.md`, `docs/integration/PIPELINE_STATUS.md`, `docs/overview/PROJECT_OVERVIEW.md`): `packages/contracts`
+contains Pydantic models matching the ODCS contracts; `packages/physics_models`
+generates synthetic telemetry (state engine, thermal, power are implemented; comms,
+radiation, packet assembler and anomaly/ML are still placeholders emitted by
+`runner.py`); it publishes to Redpanda (Kafka) which a consumer persists into
+TimescaleDB; `packages/backend` is a working FastAPI with 25 REST endpoints; and
+`dashboard/src/prototype/` is a Streamlit Digital Twin v1 consuming the backend.
+Superset was dropped - the dashboard strategy is Streamlit now, Vanilla JS +
+Plotly.js later (see `docs/architecture/DASHBOARD_ARCHITECTURE.md`).
+
+Effort #2 ("Telemetry Project - Data Tribe", `packages/pipelines` +
+`packages/streamlit_dashboard`) is a working lightweight ETL + Streamlit app that
+ingests public NASA/JPL APIs into TimescaleDB - the proven small-scale version of
+the same ingest -> store -> visualize shape. See "Two efforts in this repo" below
+before assuming any two packages are meant to talk to each other.
 
 ## Commands
 
-This is a `uv` workspace monorepo (Python >=3.12). There is no lint/CI tooling
-configured yet - don't invent `ruff`/etc. commands. `pytest` exists only for
-`packages/pipelines` so far (see "Tests" below) - don't assume it's wired up
-for other packages.
+This is a `uv` workspace monorepo (Python >=3.12). Linting is `ruff`
+(configured in the root `pyproject.toml`; B008 is ignored because FastAPI's
+`Query(...)/Depends(...)` default-argument pattern trips it).
+`pytest` is wired up for
+`packages/pipelines`, `packages/backend` and `packages/physics_models` (see
+"Tests" below).
+
+Full service startup order (Docker + host `uv` services): see `RUN_SERVICES.md`.
 
 ```
 # install/sync a package's deps (creates .venv at repo root)
-uv sync --package <backend|pipelines|contracts|streamlit_dashboard>
+uv sync --package <backend|pipelines|contracts|physics_models|streamlit_dashboard>
 
-# bring up local TimescaleDB (the only long-running Docker service for local dev)
-docker compose up -d timescaledb
+# bring up local infrastructure (TimescaleDB + Redpanda)
+docker compose up -d timescaledb redpanda
 
-# run an ingest job (one module per source: jpl_cad, jpl_orion, jpl_dsn_geometry, donki)
+# run an ingest job (one module per source: jpl_cad, jpl_orion, jpl_dsn_geometry, donki, iswa_goes_protons)
 uv run --package pipelines python -m pipelines.ingest.jpl_cad
 
-# run the dashboard
+# run the pipeline-explorer dashboard
 uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/src/streamlit_dashboard/app.py
 
 # check ingested data without a local psql client
@@ -57,7 +69,9 @@ mirroring the source path:
   files (which also means tests can't import each other - share helpers via
   fixtures).
 
-Unit tests exist for the `jpl_cad`, `donki` and `iswa_goes_protons` ingest modules.
+Unit tests exist for all pipeline ingest modules (`jpl_cad`, `donki`,
+`iswa_goes_protons`, `jpl_dsn_geometry`), plus `tests/unit/backend` (route and
+model tests) and `tests/unit/physics_models`.
 
 ```
 # Docker test environment (compose service `tests`, profile "test")
@@ -89,15 +103,15 @@ on disk that breaks subsequent native Windows `uv run` with `Access is denied` o
    telemetry from JPL Horizons ephemeris + NASA OEM/AROW data, through four coupled
    physics models (thermal, power, comms, radiation), publishing a unified telemetry
    packet. Fully specified via ODCS data contracts in `packages/contracts/src/odcs/`
-   (numbered `01_state_engine` ... `05_anomaly_ml_features`), but almost nothing is
-   implemented - `packages/backend` is a FastAPI "hello world" stub, `packages/contracts`
-   has no actual Pydantic models (despite depending on `pydantic`), and
-   `digital_twin_dashboard/`, `airflow/`, `superset/` are empty scaffolding for a
-   _planned_ TypeScript + Superset dashboard that does not exist yet.
+   (numbered `01_state_engine` ... `05_anomaly_ml_features`). Implemented so far:
+   `contracts` Pydantic models, `physics_models` state/thermal/power generators +
+   Kafka producer/consumer, `backend` REST API, `dashboard/src/prototype` Streamlit
+   views. Comms/radiation/packet/anomaly generators remain placeholders
+   (other contributors). `airflow/dags/` is empty scaffolding.
 2. **JPL data-source dashboard** ("Telemetry Project - Data Tribe", `packages/pipelines`
    - `packages/streamlit_dashboard`): a working, lightweight ETL + Streamlit app that
      ingests public NASA/JPL APIs (JPL CAD, JPL Horizons for Orion, NASA DONKI, and
-     GOES proton flux via NASA iSWA) into TimescaleDB and visualizes it. This is the only end-to-end functional path in the repo, and the
+     GOES proton flux via NASA iSWA) into TimescaleDB and visualizes it. It was the first end-to-end functional path in the repo (effort #1 is now runnable too), and the
      first step toward effort #1 - proving out the ingest -> store -> visualize pattern at
      small scale. It intentionally does **not** depend on `contracts` or `backend` yet, and
      has no formal ODCS contract - see the root `README.md` for the full architecture
@@ -139,14 +153,15 @@ the two are off by ~69 s.
   Dockerfile comments in `packages/backend/Dockerfile` about not pulling in pipeline
   deps). Don't "fix" this duplication by introducing a shared db/config package unless
   asked.
-- Each package has its own `Dockerfile` (built from the **repo root**, e.g.
-  `docker build -f packages/pipelines/Dockerfile .`, so `uv` can resolve the workspace),
-  but for local dev only `timescaledb` (and the on-demand `tests` service) run in
-  Docker - `pipelines` and `streamlit_dashboard` run natively via `uv run`. `packages/pipelines/Dockerfile`
-  currently fails to build (`openjdk-17-jre-headless` isn't available on the current
-  `python:3.12-slim`/Debian trixie base image) - it's pre-existing and unrelated to
-  anything needing Java yet (`pyproject.toml` has no PySpark dependency despite the
-  Dockerfile provisioning for it).
+- Each package has its own `Dockerfile` where applicable (built from the **repo root**,
+  e.g. `docker build -f packages/physics_models/Dockerfile .`, so `uv` can resolve the
+  workspace). For local dev, the Docker stack is `timescaledb`, `redpanda`,
+  `physics_models`, `physics_models_consumer` (plus the on-demand `tests` service);
+  `backend` and the Streamlit dashboards run natively via `uv run`
+  (see `RUN_SERVICES.md`). `packages/pipelines/Dockerfile` installs no JDK -
+  the `pipelines` package has no PySpark dependency; if one is reintroduced,
+  target Spark 4.x (Java 17/21/25) and use `openjdk-21-jre-headless` -
+  openjdk-17 no longer exists on the `python:3.12-slim`/Debian trixie base.
 
 ## JPL SSD API notes
 
