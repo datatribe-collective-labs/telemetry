@@ -4,7 +4,11 @@ HTTP is mocked with `responses` - no network access.
 """
 
 import responses
-from pipelines.ingest.jpl_dsn_geometry import DEFAULT_BASE_URL, DSN_SITES, fetch_dsn_geometry
+from pipelines.ingest.jpl_dsn_geometry import (
+    DEFAULT_BASE_URL,
+    DSN_SITES,
+    fetch_dsn_geometry,
+)
 
 
 @responses.activate
