@@ -35,6 +35,11 @@ This is a `uv` workspace monorepo (Python >=3.12). Linting is `ruff`
 `packages/pipelines`, `packages/backend` and `packages/physics_models` (see
 "Tests" below).
 
+`uv run pytest` from the repo root reuses the single shared `.venv`; a partial
+`uv sync --package <pkg>` can prune other workspace packages from it. If test
+collection fails with `ModuleNotFoundError` (pydantic, fastapi, ...), run
+`uv sync --all-packages` first.
+
 Full service startup order (Docker + host `uv` services): see `RUN_SERVICES.md`.
 
 ```
