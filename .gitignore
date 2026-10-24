@@ -16,11 +16,6 @@ wheels/
 .env
 
 SpaceVault
-GIT_COMMIT_PLAN.md
-DATA_SOURCE_ANALYSIS.md
-orion-testing-walkthrough.md
-PROMPT_PDF_ATTITUDE_PARSING.md
-docs/decisions/testing-infrastructure-plan.md
 
 
 
