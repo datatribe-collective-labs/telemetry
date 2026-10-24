@@ -91,9 +91,9 @@ else:
     with col_nominal:
         st.subheader("All Nominal")
         if latest.all_nominal:
-            st.success("✅ **ALL NOMINAL**")
+            st.success("**ALL NOMINAL**")
         else:
-            st.error("❌ **ANOMALY DETECTED**")
+            st.error("**ANOMALY DETECTED**")
         st.caption("Thermal ∧ Power ∧ Comms = NOMINAL")
     
     with col_met:

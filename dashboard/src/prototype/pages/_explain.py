@@ -47,7 +47,7 @@ the vehicle rides to them, i.e. *margin*, which is what trend-watchers actually 
 sphere (blue): the real JPL Horizons/OEM arc (cyan) and the StateEngine replay (red
 dashed). Dot color encodes speed.
 
-**How:** Orbit with the mouse. Positions come from `/telemetry/real/orion` (NASA/JPJ
+**How:** Orbit with the mouse. Positions come from `/telemetry/real/orion` (NASA/JPL
 ground truth, 4-min cadence) and `/telemetry/synthetic/state` (the physics replay).
 The synthetic line interpolates NASA's own planning OEM arcs, so a faithful model traces
 the cyan line almost exactly.
@@ -255,5 +255,5 @@ def explain(key: str) -> None:
     text = EXPLAINERS.get(key)
     if not text:
         return
-    with st.expander("ℹ️ About this visualization"):
+    with st.expander("About this visualization"):
         st.markdown(text)

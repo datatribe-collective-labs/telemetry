@@ -102,9 +102,9 @@ if "visible" in df.columns:
                 lt = row.get("light_time_s")
                 
                 if visible:
-                    st.success(f"🟢 {site} — VISIBLE")
+                    st.success(f"{site} — VISIBLE")
                 else:
-                    st.error(f"🔴 {site} — BELOW HORIZON")
+                    st.error(f"{site} — BELOW HORIZON")
                 
                 st.caption(f"Elev: {elev:.1f}°" if pd.notna(elev) else "Elev: N/A")
                 st.caption(f"Az: {az:.1f}°" if pd.notna(az) else "Az: N/A")

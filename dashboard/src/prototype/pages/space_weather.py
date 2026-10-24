@@ -227,7 +227,7 @@ if dsn_items:
         vis_cols = st.columns(len(latest_vis))
         for i, (_, row) in enumerate(latest_vis.iterrows()):
             with vis_cols[i]:
-                status = "🟢 VISIBLE" if row.get("visible") else "🔴 BELOW HORIZON"
+                status = "VISIBLE" if row.get("visible") else "BELOW HORIZON"
                 elev = row.get("elevation_deg", 0)
                 st.metric(row.get("site", "?"), status, delta=f"{elev:.1f}°" if pd.notna(elev) else "N/A")
 else:
