@@ -90,7 +90,7 @@ def _parse_horizons_date(date_str: str) -> datetime:
     clean = date_str.replace("A.D.", "").replace("B.C.", "").strip()
     for fmt in ("%Y-%b-%d %H:%M:%S.%f", "%Y-%b-%d %H:%M:%S", "%Y-%b-%d %H:%M"):
         try:
-            dt = datetime.strptime(clean, fmt)  # noqa: DTZ007 - tz attached on next line
+            dt = datetime.strptime(clean, fmt)
             return dt.replace(tzinfo=UTC)
         except ValueError:
             pass
