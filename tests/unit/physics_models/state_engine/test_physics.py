@@ -218,7 +218,7 @@ class TestAttitudeQuaternion:
 
     def test_default_returns_identity(self):
         """Default attitude should be identity quaternion."""
-        from physics_models.state_engine.planned_attitude import AttitudeMode
+        from contracts.planned_attitude import AttitudeMode
         qw, qx, qy, qz = compute_attitude_quaternion(AttitudeMode.BIAS_NEG_XSI, timedelta(0))
         assert qw == pytest.approx(1.0)
         assert qx == pytest.approx(0.0)
@@ -333,7 +333,7 @@ class TestStateEnginePhysics:
         """Attitude mode should come from planned_attitude resolver."""
         state = physics.compute_state_at_met(timedelta(hours=1))
         assert state["attitude_mode"] in [m.value for m in __import__(
-            'physics_models.state_engine.planned_attitude', fromlist=['AttitudeMode']
+            'contracts.planned_attitude', fromlist=['AttitudeMode']
         ).AttitudeMode]
 
 
@@ -341,21 +341,21 @@ class TestPlannedAttitudeIntegration:
     """Test integration with planned_attitude module."""
 
     def test_resolve_attitude_returns_mode_and_def(self):
-        from physics_models.state_engine.planned_attitude import resolve_attitude
+        from contracts.planned_attitude import resolve_attitude
         mode, mode_def = resolve_attitude(timedelta(hours=1))
         assert mode is not None
         assert mode_def is not None
         assert "description" in mode_def
 
     def test_solar_incidence_angle_estimate(self):
-        from physics_models.state_engine.planned_attitude import (
+        from contracts.planned_attitude import (
             get_solar_incidence_angle_estimate,
         )
         angle = get_solar_incidence_angle_estimate(timedelta(hours=1))
         assert 0 <= angle <= 180
 
     def test_solar_array_gimbal_estimate(self):
-        from physics_models.state_engine.planned_attitude import (
+        from contracts.planned_attitude import (
             get_solar_array_gimbal_estimate,
         )
         angle = get_solar_array_gimbal_estimate(timedelta(hours=1))

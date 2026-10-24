@@ -1,7 +1,7 @@
 """Unit tests for pipelines.ingest.mission_events (no DB)."""
 
+from contracts.planned_attitude import ATTITUDE_TIMELINE
 from pipelines.ingest.mission_events import MissionEventRow, timeline_to_rows
-from pipelines.transforms.planned_attitude import ATTITUDE_TIMELINE
 
 
 def test_timeline_to_rows_matches_source_length():

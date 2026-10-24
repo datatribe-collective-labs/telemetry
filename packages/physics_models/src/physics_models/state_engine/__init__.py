@@ -1,6 +1,6 @@
 """State engine generator - authoritative spacecraft state."""
 
-from physics_models.state_engine.planned_attitude import (
+from contracts.planned_attitude import (
     AttitudeMode,
     AttitudeSegment,
     format_met,

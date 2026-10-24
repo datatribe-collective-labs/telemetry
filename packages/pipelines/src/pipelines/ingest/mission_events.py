@@ -1,6 +1,6 @@
 """Ingest the Artemis II planned attitude/mission timeline into `mission_events`.
 
-Source: `pipelines/transforms/planned_attitude.py` — the truth model extracted
+Source: `contracts.planned_attitude` — the truth model extracted
 from the NASA "Artemis II Overview Timeline - FINAL" PDF (graphical document; the
 code module is the debuggable, versioned form — see
 docs/guides/PROMPT_PDF_ATTITUDE_PARSING.md).
@@ -19,9 +19,9 @@ import argparse
 from dataclasses import dataclass
 
 import psycopg
+from contracts.planned_attitude import ATTITUDE_TIMELINE
 
 from pipelines.db import get_connection
-from pipelines.transforms.planned_attitude import ATTITUDE_TIMELINE
 
 MISSION_EVENTS_SCHEMA = """
 CREATE TABLE IF NOT EXISTS mission_events (

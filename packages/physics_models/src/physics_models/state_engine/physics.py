@@ -8,8 +8,7 @@ from datetime import UTC, datetime, timedelta
 from math import acos, atan2, cos, degrees, radians, sin, sqrt
 
 import numpy as np
-
-from physics_models.state_engine.planned_attitude import (
+from contracts.planned_attitude import (
     AttitudeMode,
     get_solar_array_gimbal_estimate,
     get_solar_incidence_angle_estimate,

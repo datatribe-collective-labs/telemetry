@@ -16,6 +16,10 @@ from contracts import (
     SyntheticTelemetryPacket,
     SyntheticThermalOutput,
 )
+from contracts.planned_attitude import (
+    get_solar_array_gimbal_estimate,
+    get_solar_incidence_angle_estimate,
+)
 
 from physics_models.config import PhysicsModelsConfig, load_config
 from physics_models.cross_model import CrossModelBus
@@ -30,10 +34,6 @@ from physics_models.power.physics import PowerModel
 from physics_models.state_engine.physics import (
     compute_eclipse_state,
     compute_solar_flux,
-)
-from physics_models.state_engine.planned_attitude import (
-    get_solar_array_gimbal_estimate,
-    get_solar_incidence_angle_estimate,
 )
 from physics_models.thermal.physics import ThermalModel3Node
 

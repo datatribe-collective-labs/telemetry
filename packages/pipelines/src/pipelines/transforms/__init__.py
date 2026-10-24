@@ -1,6 +1,6 @@
 """Physics transforms for space weather, radiation, and mission planning."""
 
-from pipelines.transforms.planned_attitude import (
+from contracts.planned_attitude import (
     ATTITUDE_MODE_DEFINITIONS,
     ATTITUDE_TIMELINE,
     AttitudeMode,
@@ -16,6 +16,7 @@ from pipelines.transforms.planned_attitude import (
     parse_met,
     resolve_attitude,
 )
+
 from pipelines.transforms.sgps_proton_flux import (
     CHANNEL_INDEX_TO_NAME,
     DIFFERENTIAL_PER_KEV,
