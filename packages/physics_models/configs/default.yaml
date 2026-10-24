@@ -1,0 +1,40 @@
+tick_hz: 1.0
+# Demo replay controls (also overridable via PHYSICS_MODELS_TIME_SCALE /
+# PHYSICS_MODELS_START_MET_SECONDS env vars)
+time_scale: 1.0
+start_met_seconds: 0.0
+kafka:
+  bootstrap_servers: "localhost:9092"
+  topics:
+    trajectory: "trajectory"
+    telemetry: "telemetry"
+    cross_model_state: "cross_model_state"
+    events: "events"
+    ml_features: "ml_features"
+
+state_engine:
+  oem_source: "oem_store"
+  oem_store_path: "data/oem/all-artemis-ii-oem-files.zip"  # NASA CCSDS OEM arcs
+  oem_file_path: null
+  liftoff_utc: "2026-04-01T22:35:00Z"
+  tick_hz: 1.0
+
+thermal:
+  tick_hz: 1.0
+
+power:
+  tick_hz: 1.0
+
+comms:
+  tick_hz: 1.0
+
+radiation:
+  tick_hz: 1.0
+
+anomaly:
+  detection_layer_1_enabled: true
+  detection_layer_2_enabled: true
+  ml_enabled: true
+
+ml_features:
+  tick_hz: 1.0
