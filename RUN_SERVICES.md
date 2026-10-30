@@ -1,5 +1,11 @@
 # How to Run Services
 
+The project has two kinds of data: **real data** (published by NASA/JPL, ingested by
+`packages/pipelines` or read from `data/oem/`) and **synthetic data** (spacecraft
+telemetry simulated by `packages/physics_models`). See "Real data vs synthetic data"
+in the root `README.md`. Steps 0-1 are shared; steps 3 and 7B are the real data path;
+steps 2, 4-6 and 7A the synthetic data path.
+
 ## Prerequisites
 - Docker & Docker Compose
 - uv (for local development)
@@ -12,7 +18,7 @@ Run from the **repo root**.
 # Database credentials, read by Docker Compose and every host-side service
 cp .env.example .env   # then set POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
 
-# One shared .venv with every workspace package (the prototype dashboard needs
+# One shared .venv with every workspace package (the Digital Twin dashboard needs
 # contracts + httpx + streamlit together, which no single package provides)
 uv sync --all-packages
 ```
@@ -36,7 +42,7 @@ uv run --package backend alembic upgrade head
 cd ../..
 ```
 
-### 3. Pipelines — ingest real data into TimescaleDB
+### 3. Real data — ingest jobs into TimescaleDB
 Run from the **repo root**. These populate the tables that the backend real-data endpoints serve.
 ```bash
 # NASA APIs: Orion ephemeris, DONKI events, GOES protons, DSN geometry, close approaches
@@ -51,7 +57,7 @@ uv run --package pipelines python -m pipelines.ingest.nasa_oem
 uv run --package pipelines python -m pipelines.ingest.mission_events  # DRAFT data
 ```
 
-### 4. Physics Models (Docker) — produces synthetic telemetry to Kafka
+### 4. Synthetic data — physics models (Docker) produce telemetry to Kafka
 ```bash
 # Build and start (produces to 4 Kafka topics: trajectory, telemetry, cross_model_state, ml_features;
 # the `events` topic is reserved for the anomaly detector, not yet implemented)
@@ -61,7 +67,7 @@ docker compose up -d --build --force-recreate physics_models
 docker exec telemetry-redpanda-1 rpk topic consume telemetry --num 5
 ```
 
-### 5. Physics Models Consumer (Docker) — Kafka → TimescaleDB
+### 5. Synthetic data — consumer (Docker) writes Kafka → TimescaleDB
 ```bash
 docker compose up -d --build --force-recreate physics_models_consumer
 
@@ -86,21 +92,21 @@ curl "http://localhost:8000/dsn-geometry?limit=5"
 curl "http://localhost:8000/telemetry/synthetic/latest?limit=5"
 ```
 
-### 7. Streamlit Dashboard (uv, runs on host port 8501)
+### 7. Dashboards (uv, run on host port 8501)
 
 Run from the **repo root**.
 
 Two dashboards are available. Pick the one that matches what you want to see.
 Both use port 8501; to run them side by side, give the second one `--server.port 8502`.
 
-#### A) Prototype Dashboard — synthetic telemetry + mission replay
+#### A) Digital Twin dashboard (prototype) — synthetic data, with real data alongside
 Source: `dashboard/src/prototype`. Consumes the backend REST API.
 ```bash
 # Plain uv run (not a workspace package)
 uv run streamlit run dashboard/src/prototype/app.py --server.port 8501 --server.headless true
 ```
 
-#### B) Real-Data Test Dashboard — JPL/NASA ingestion verification
+#### B) Data Explorer — real data only
 Source: `packages/streamlit_dashboard`. Queries the ingested tables in TimescaleDB directly (no backend needed).
 ```bash
 # Workspace package, run via uv --package
@@ -116,7 +122,7 @@ curl http://localhost:8501/_stcore/health
 ## Key Points
 - **Never** `pip install` in system Python — use `uv run --package <pkg>` or Docker
 - Physics models run **inside Docker** (connects to `redpanda:9092`)
-- Backend & Dashboard run **on host** via `uv` (connect to `localhost:8000`, `localhost:5433`)
+- Backend & dashboards run **on host** via `uv` (connect to `localhost:8000`, `localhost:5433`)
 - Kafka topics must exist before physics models start (auto-created by Redpanda)
 - TimescaleDB must be healthy before pipelines/physics_models start
 
@@ -160,7 +166,7 @@ Press `Ctrl+C` in the terminal running each one. If one was started in the backg
 ```bash
 # macOS / Linux
 pkill -f "uv run --package backend python -m backend.main"   # Backend API (port 8000)
-pkill -f "streamlit run"                                      # Streamlit Dashboard (port 8501)
+pkill -f "streamlit run"                                      # Dashboards (port 8501)
 ```
 ```powershell
 # Windows (PowerShell)

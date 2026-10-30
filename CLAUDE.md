@@ -20,11 +20,19 @@ TimescaleDB; `packages/backend` is a working FastAPI with 28 REST endpoints; and
 Superset was dropped - the dashboard strategy is Streamlit now, Vanilla JS +
 Plotly.js later (see `docs/architecture/DASHBOARD_ARCHITECTURE.md`).
 
-Effort #2 ("Telemetry Project - Data Tribe", `packages/pipelines` +
+Effort #2 (the real data path: `packages/pipelines` + the Data Explorer in
 `packages/streamlit_dashboard`) is a working lightweight ETL + Streamlit app that
 ingests public NASA/JPL APIs into TimescaleDB - the proven small-scale version of
 the same ingest -> store -> visualize shape. See "Two efforts in this repo" below
 before assuming any two packages are meant to talk to each other.
+
+Docs use one vocabulary for this split: **real data** (published by NASA/JPL:
+ingested tables + `data/oem/` files) vs **synthetic data** (simulated by
+`physics_models`; tables under `/telemetry/synthetic/*` in the API). The two
+dashboards are the **Data Explorer** (`packages/streamlit_dashboard`, real data
+only, reads the DB) and the **Digital Twin dashboard** (`dashboard/src/prototype`,
+synthetic data with real data alongside, reads the backend). Keep these names in
+new docs; the root `README.md` "Real data vs synthetic data" section is canonical.
 
 ## Commands
 
@@ -104,7 +112,7 @@ on disk that breaks subsequent native Windows `uv run` with `Access is denied` o
 
 ## Two efforts in this repo
 
-1. **Spacecraft digital twin** (the final target): simulates Artemis II Orion
+1. **Spacecraft digital twin / synthetic data path** (the final target): simulates Artemis II Orion
    telemetry from JPL Horizons ephemeris + NASA OEM/AROW data, through four coupled
    physics models (thermal, power, comms, radiation), publishing a unified telemetry
    packet. Fully specified via ODCS data contracts in `packages/contracts/src/odcs/`
@@ -113,10 +121,11 @@ on disk that breaks subsequent native Windows `uv run` with `Access is denied` o
    Kafka producer/consumer, `backend` REST API, `dashboard/src/prototype` Streamlit
    views. Comms/radiation/packet/anomaly generators remain placeholders
    (other contributors). `airflow/dags/` is empty scaffolding.
-2. **JPL data-source dashboard** ("Telemetry Project - Data Tribe", `packages/pipelines`
+2. **Real data path / Data Explorer** (`packages/pipelines`
    - `packages/streamlit_dashboard`): a working, lightweight ETL + Streamlit app that
-     ingests public NASA/JPL APIs (JPL CAD, JPL Horizons for Orion, NASA DONKI, and
-     GOES proton flux via NASA iSWA) into TimescaleDB and visualizes it. It was the first end-to-end functional path in the repo (effort #1 is now runnable too), and the
+     ingests public NASA/JPL data (JPL CAD, JPL Horizons for Orion and DSN geometry,
+     NASA DONKI, GOES proton flux via NASA iSWA, plus the local NASA OEM arcs and
+     mission timeline) into TimescaleDB and visualizes it. It was the first end-to-end functional path in the repo (effort #1 is now runnable too), and the
      first step toward effort #1 - proving out the ingest -> store -> visualize pattern at
      small scale. It intentionally does **not** depend on `contracts` or `backend` yet, and
      has no formal ODCS contract - see the root `README.md` for the full architecture

@@ -1,68 +1,120 @@
 # Telemetry Project - Data Tribe
 
-Open-source telemetry project building a **digital twin of NASA's Artemis II /
-Orion spacecraft** from publicly available NASA/JPL data.
+Open-source project building a **digital twin of NASA's Artemis II / Orion
+spacecraft** from publicly available NASA/JPL data: physics models simulate
+the spacecraft's telemetry (**synthetic data**), checked against what NASA/JPL
+publish (**real data**).
 
-**What it provides:**
+## Architecture
 
-- Batch ingestion of public NASA/JPL APIs and NASA source files into TimescaleDB
-- Synthetic spacecraft telemetry from physics models (state, thermal, power),
-  streamed through Redpanda (Kafka) and persisted to TimescaleDB
-- A FastAPI REST API over both real and synthetic data
-- Streamlit dashboards for monitoring and visualization
+```mermaid
+flowchart LR
+    NASA["NASA / JPL - real data"]
+    Ingest["Ingest jobs"]
+    Physics["Physics models - synthetic data"]
+    Kafka["Redpanda - Kafka"]
+    DB[("TimescaleDB")]
+    API["Backend API"]
+    Twin["Digital Twin dashboard - prototype"]
+    Explorer["Data Explorer - real data only"]
 
-The repo holds two related efforts:
+    NASA --> Ingest
+    Ingest --> DB
+    NASA -- OEM trajectory --> Physics
+    Physics --> Kafka
+    Kafka --> DB
+    DB --> API
+    API --> Twin
+    DB --> Explorer
+```
 
-1. **Digital twin** (the final target) - `packages/contracts` (ODCS data
-   contracts + Pydantic models), `packages/physics_models` (synthetic telemetry
-   generators + Kafka producer/consumer), `packages/backend` (FastAPI), and the
-   Streamlit prototype in `dashboard/src/prototype/`. State engine, thermal and
-   power are implemented; comms, radiation, packet assembler and anomaly/ML are
-   still placeholders.
-2. **Pipeline explorer** - `packages/pipelines` + `packages/streamlit_dashboard`:
-   a lightweight ETL that ingests each public source into its own table and shows
-   one dashboard page per source. It does not depend on `contracts` or `backend`.
+## Quick start: run the prototype
+
+Needs Docker and [`uv`](https://docs.astral.sh/uv/). Run from the repo root;
+`.env` needs `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB`.
+
+```bash
+# 1. Setup (once)
+cp .env.example .env
+uv sync --all-packages
+
+# 2. Database + Kafka, then the synthetic data tables
+docker compose up -d timescaledb redpanda
+cd packages/backend
+uv run --package backend alembic upgrade head
+cd ../..
+
+# 3. Real data shown next to the simulation
+uv run --package pipelines python -m pipelines.ingest.jpl_orion
+uv run --package pipelines python -m pipelines.ingest.jpl_dsn_geometry
+uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons
+uv run --package pipelines python -m pipelines.ingest.donki
+
+# 4. Synthetic data: physics models -> Kafka -> TimescaleDB
+docker compose up -d --build physics_models physics_models_consumer
+
+# 5. Backend API (terminal 1)
+uv run --package backend python -m backend.main
+
+# 6. Prototype dashboard (terminal 2) -> http://localhost:8501
+uv run streamlit run dashboard/src/prototype/app.py
+```
+
+To speed up the simulated mission, see "Demo Replay Controls" in
+[`RUN_SERVICES.md`](RUN_SERVICES.md); it also covers stopping services and
+troubleshooting. Running only the Data Explorer is under [How to run](#how-to-run).
+
+## Real data vs synthetic data
+
+Orion's onboard telemetry (temperatures, battery charge, link margin, radiation
+dose, ...) is not public. So this project **simulates it from physics** - that is
+the **synthetic data** - and uses the **real data** NASA/JPL do publish in two
+ways: as **inputs** that drive the simulation, and as **ground truth** to check it
+against.
+
+- **Real data** - published by NASA/JPL: Orion's trajectory, Deep Space Network
+  (DSN) geometry, space weather, asteroid close approaches, and the planned mission
+  timeline. Fetched by batch ingest jobs (`packages/pipelines`) into TimescaleDB,
+  or read from NASA files shipped in the repo (`data/oem/`).
+- **Synthetic data** - simulated spacecraft telemetry from the physics models
+  (`packages/physics_models`), streamed through Redpanda (Kafka) into TimescaleDB.
+  State, thermal and power are real physics models; comms, radiation, packet
+  assembly and anomaly/ML still emit **placeholder values**.
+
+| Data | Kind | Stored in | Drives the simulation? | Shown in |
+|------|------|-----------|------------------------|----------|
+| NASA OEM trajectory arcs | real (file) | `data/oem/`, `oem_state_vectors` | ✅ the synthetic trajectory is interpolated from these | Digital Twin: Trajectory |
+| Artemis II attitude timeline | real (curated, **draft**) | `contracts.planned_attitude`, `mission_events` | ✅ spacecraft attitude / solar angles | - |
+| JPL Horizons Orion trajectory | real | `orion_ephemeris` | no - ground truth the synthetic trajectory is compared against | Data Explorer, Digital Twin: Trajectory |
+| DSN site geometry (Horizons) | real | `dsn_site_geometry` | not yet (planned input for comms) | Data Explorer, Digital Twin: DSN Coverage |
+| GOES proton flux (iSWA) | real | `goes_integral_protons` | not yet (planned input for radiation) | Data Explorer, Digital Twin: Space Weather |
+| DONKI space weather events | real | `donki_events` | not yet (planned input for radiation) | Data Explorer, Digital Twin: Space Weather |
+| JPL close approaches (CAD) | real | `close_approaches` | no | Data Explorer |
+| State, thermal, power | synthetic | `state_snapshot`, `thermal_output`, `power_output` | - (model outputs) | Digital Twin |
+| Comms, radiation, packet, cross-model, ML features | synthetic, **placeholder** | `comms_output`, `radiation_output`, `telemetry_packet`, `cross_model_state`, `ml_feature_vectors` | - (model outputs) | Digital Twin: Overview |
+
+### Two dashboards
+
+| | **Data Explorer** | **Digital Twin dashboard (prototype)** |
+|---|---|---|
+| Shows | Real data only - one page per source | Synthetic telemetry, with real data alongside for comparison |
+| Code | `packages/streamlit_dashboard/` | `dashboard/src/prototype/` (Streamlit v1; a JS "Mission Control" is planned) |
+| Reads from | TimescaleDB directly | The backend API (`packages/backend`) |
+| Use it to | Check what the ingest jobs collected | Watch the simulated mission and compare it to the real trajectory |
+
+The Data Explorer came first and proved the ingest -> store -> visualize pattern;
+it is the first stage of the digital twin, not a separate project.
 
 More docs: [`docs/README.md`](docs/README.md) (index),
 [`RUN_SERVICES.md`](RUN_SERVICES.md) (full startup order and troubleshooting),
 [`packages/backend/README.md`](packages/backend/README.md) (API reference).
 
-## Architecture Diagram
+## Data sources
 
-```mermaid
-flowchart LR
-    subgraph Sources["Public NASA / JPL data"]
-        CAD(["JPL CAD API"])
-        HZN(["JPL Horizons\nOrion + DSN geometry"])
-        DONKI(["NASA DONKI"])
-        ISWA(["NASA iSWA HAPI\nGOES protons"])
-        OEM(["NASA OEM arcs\ndata/oem (local)"])
-        EVT(["Mission timeline\n(local, draft)"])
-    end
+TimescaleDB, Redpanda, `physics_models` and `physics_models_consumer` run in
+Docker; everything else runs natively with `uv run`.
 
-    Ingest["pipelines.ingest.*\n(batch, uv run)"]
-    Physics["physics_models\nstate / thermal / power"]
-    Kafka[["Redpanda (Kafka)"]]
-    Consumer["physics_models_consumer"]
-    DB[("TimescaleDB")]
-    API["backend\nFastAPI :8000"]
-    Explorer["Pipeline explorer\nStreamlit :8501"]
-    Proto["Digital twin prototype\nStreamlit :8501"]
-
-    CAD & HZN & DONKI & ISWA & OEM & EVT --> Ingest --> DB
-    OEM --> Physics --> Kafka --> Consumer --> DB
-    DB --> API --> Proto
-    DB --> Explorer
-
-    subgraph Docker["Docker"]
-        DB
-        Kafka
-        Physics
-        Consumer
-    end
-```
-
-**Data sources** (one ingest module and one table each):
+**Real data sources** (one ingest module and one table each):
 
 | Source | Ingest module | Table |
 |--------|---------------|-------|
@@ -74,10 +126,12 @@ flowchart LR
 | NASA OEM ephemeris arcs (`data/oem/`, no network) | `nasa_oem` | `oem_state_vectors` |
 | Artemis II mission timeline (curated, **draft** data, no network) | `mission_events` | `mission_events` |
 
-The synthetic telemetry tables (`state_snapshot`, `thermal_output`,
-`power_output`, `comms_output`, `radiation_output`, `cross_model_state`,
-`telemetry_packet`, `anomaly_events`, `ml_feature_vectors`) are created by the
-backend's Alembic migration and filled by `physics_models_consumer`.
+**Synthetic data tables** (`state_snapshot`, `thermal_output`, `power_output`,
+`comms_output`, `radiation_output`, `cross_model_state`, `telemetry_packet`,
+`anomaly_events`, `ml_feature_vectors`) are created by the backend's Alembic
+migration and filled by `physics_models_consumer`. The backend serves real data
+at top-level routes (`/orion`, `/donki`, ...) and synthetic data under
+`/telemetry/synthetic/*`.
 
 ## What runs where
 
@@ -86,7 +140,7 @@ backend's Alembic migration and filled by `physics_models_consumer`.
   (Kafka on `:9092`), `physics_models` (producer) and `physics_models_consumer`,
   plus the on-demand `tests` service (see "Tests" below).
 - **Natively via `uv run`**: the ingest jobs, the backend API (`:8000`) and the
-  Streamlit dashboards (`:8501`). They talk to the Dockerized database over
+  two dashboards (`:8501`). They talk to the Dockerized database over
   `localhost:5433`.
 
 ## How to run
@@ -101,63 +155,40 @@ cp .env.example .env        # then set POSTGRES_USER / POSTGRES_PASSWORD / POSTG
 uv sync --all-packages      # one shared .venv with every workspace package
 ```
 
-`.env` is read by Docker Compose, the ingest jobs, the backend and the
-dashboards. `DATABASE_URL` is optional; without it, host-side tools connect to
+`.env` is read by Docker Compose, the ingest jobs, the backend and the Data
+Explorer. `DATABASE_URL` is optional; without it, host-side tools connect to
 `localhost:5433` using the three `POSTGRES_*` values.
 
-### Option A - Pipeline explorer only (real data, no Kafka)
+### Real data path - ingest + Data Explorer
 
 ```bash
 # 1. Database
 docker compose up -d timescaledb
 
-# 2. Ingest whichever sources you want (each job creates its own table)
+# 2. Ingest the real data (each job creates its own table)
 uv run --package pipelines python -m pipelines.ingest.jpl_cad
 uv run --package pipelines python -m pipelines.ingest.jpl_orion
 uv run --package pipelines python -m pipelines.ingest.jpl_dsn_geometry
 uv run --package pipelines python -m pipelines.ingest.donki
 uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons
+uv run --package pipelines python -m pipelines.ingest.nasa_oem
+uv run --package pipelines python -m pipelines.ingest.mission_events
 
-# 3. Dashboard -> http://localhost:8501
+# 3. Data Explorer -> http://localhost:8501
 uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/src/streamlit_dashboard/app.py
 ```
 
 Pages: Welcome, Close Approaches, Artemis II Orion, DSN Coverage, NASA DONKI,
 GOES Proton Flux.
 
-### Option B - Full digital twin (synthetic telemetry + API + prototype dashboard)
+### Synthetic data path - prototype (Digital Twin dashboard)
 
-```bash
-# 1. Infrastructure
-docker compose up -d timescaledb redpanda
+See [Quick start: run the prototype](#quick-start-run-the-prototype). Pages:
+Overview / Health, Trajectory, Thermal, Power, Space Weather, DSN Coverage.
 
-# 2. Create the synthetic telemetry tables (before the consumer and the backend)
-cd packages/backend
-uv run --package backend alembic upgrade head
-cd ../..
-
-# 3. Real data for the backend's real-data endpoints: the Option A ingest jobs, plus
-uv run --package pipelines python -m pipelines.ingest.nasa_oem
-uv run --package pipelines python -m pipelines.ingest.mission_events
-
-# 4. Physics models -> Redpanda -> TimescaleDB
-docker compose up -d --build physics_models physics_models_consumer
-
-# 5. Backend API -> http://localhost:8000 (interactive docs at /docs)
-uv run --package backend python -m backend.main
-
-# 6. Prototype dashboard, in a second terminal -> http://localhost:8501
-uv run streamlit run dashboard/src/prototype/app.py
-```
-
-Prototype pages: Overview / Health, Trajectory, Thermal, Power, Space Weather,
-DSN Coverage. Both dashboards default to port 8501, so run one at a time or pass
-`--server.port 8502` to the second.
-
-The simulator replays the mission from liftoff in real time. To speed it up or
-jump ahead, set `PHYSICS_MODELS_TIME_SCALE` / `PHYSICS_MODELS_START_MET_SECONDS`
-(see "Demo Replay Controls" in [`RUN_SERVICES.md`](RUN_SERVICES.md)). That file
-also covers health checks, stopping services and troubleshooting.
+Both dashboards default to port 8501, so run one at a time or pass
+`--server.port 8502` to the second. The backend's interactive API docs are at
+http://localhost:8000/docs.
 
 ### Ingest options
 
@@ -229,7 +260,7 @@ their own datasource-specific runner.
 
 ## Adding another data source
 
-The dashboard is structured as one Streamlit page per JPL data source
+The Data Explorer is structured as one Streamlit page per real data source
 (`packages/streamlit_dashboard/src/streamlit_dashboard/`):
 
 - `data/` - one query module per source (e.g. `data/close_approaches.py`),

@@ -1,7 +1,7 @@
 # Telemetry Project Documentation
 
 Start here. Docs are grouped by **type** — find the folder, then the file.
-For *running* the services, see the root [`RUN_SERVICES.md`](../RUN_SERVICES.md).
+For *running* the services, see the root [`RUN_SERVICES.md`](../RUN_SERVICES.md). For how **real data** (NASA/JPL) and **synthetic data** (physics models) fit together, see "Real data vs synthetic data" in the root [`README.md`](../README.md).
 
 ## Overview — *"What is this project and where is it going?"*
 
@@ -15,7 +15,7 @@ For *running* the services, see the root [`RUN_SERVICES.md`](../RUN_SERVICES.md)
 | Doc | Read this when… |
 |-----|-----------------|
 | [architecture/PHYSICS_MODELS_ARCHITECTURE.md](architecture/PHYSICS_MODELS_ARCHITECTURE.md) | You're working in `packages/physics_models/` — package layout, tick loop, cross-model coupling, Kafka producer design. **Note: this is the target architecture**; comms/radiation/packet/anomaly are not yet implemented (banner at top of file). |
-| [architecture/DASHBOARD_ARCHITECTURE.md](architecture/DASHBOARD_ARCHITECTURE.md) | You're building or changing dashboards — three tiers (pipeline explorer / Streamlit prototype / future production JS), page designs, which backend endpoints feed which widgets. |
+| [architecture/DASHBOARD_ARCHITECTURE.md](architecture/DASHBOARD_ARCHITECTURE.md) | You're building or changing dashboards — the Data Explorer (real data), the Digital Twin dashboard (synthetic + real) and the future JS "Mission Control", page designs, which backend endpoints feed which widgets. |
 | [architecture/DASHBOARD_V1_DESIGN.md](architecture/DASHBOARD_V1_DESIGN.md) | You're building the **v1 Streamlit prototype** (`dashboard/src/prototype/`) — page-by-page plan, flyby visualization, data organization, build order. |
 
 ## Integration — *"Is the pipeline wired up correctly?"*
