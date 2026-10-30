@@ -9,4 +9,3 @@ Consumers:
 - `physics_models` state engine interpolates these arcs at runtime (`physics_models/oem.py`)
 - `pipelines.ingest.nasa_oem` loads them into the `oem_state_vectors` TimescaleDB hypertable
 
-Facts transcribed in `docs/guides/ARTEMIS_II_RESEARCH_QUESTIONS.md` §Answers.

@@ -7,7 +7,7 @@ internal pipeline-explorer for real JPL/NASA data — **do not extend it**.
 Superset is removed from the plan. Production "Mission Control" JS comes later (see
 `DASHBOARD_ARCHITECTURE.md` §5); v1 is Streamlit.
 
-**Reality check (see `../integration/CONTRACT_PHYSICS_AUDIT.md`):** as of 2026-10-19 the
+**Reality check:** as of 2026-10-19 the
 state engine interpolates real NASA OEM arcs and thermal/power run their real models;
 comms, radiation, packet assembly, anomaly and ML features still emit placeholders.
 Everything below works in both modes; comms/radiation widgets carry a placeholder banner
@@ -67,8 +67,7 @@ Everything is keyed by `timestamp_utc` (contract primary key). Add a derived **M
 MET on the x-axis (use secondary hover text — dual axes in Plotly are more pain than
 value). Mission event markers come from a small table in `mission_clock.py`
 (launch, ICPS sep, HEO start/end, TLI, flyby, entry) — initial values from the contract
-notes + to be refined from ChatGPT research answers fed into
-`guides/ARTEMIS_II_RESEARCH_QUESTIONS.md`.
+notes, refined from the external research summarized in §6.
 
 ## 3. Page designs
 
@@ -171,8 +170,7 @@ glance whether synthetic telemetry matches JPL ground truth.
 ## 6. Open inputs / sources
 
 **External research completed 2026-10-19** (ChatGPT answers + first-hand ESA
-verification; details in `../guides/ARTEMIS_II_RESEARCH_QUESTIONS.md` §"ChatGPT answers,
-vetted"). Load-bearing updates for this design:
+verification). Load-bearing updates for this design:
 - Trajectory is a **hybrid free-return** (NASA NTRS, ChatGPT-cited); closest lunar
   approach ≈ 6,545 km above the surface (NASA FD6, ChatGPT-cited) — use these on the
   Trajectory page, with attribution.

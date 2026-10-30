@@ -15,7 +15,7 @@ contains Pydantic models matching the ODCS contracts; `packages/physics_models`
 generates synthetic telemetry (state engine, thermal, power are implemented; comms,
 radiation, packet assembler and anomaly/ML are still placeholders emitted by
 `runner.py`); it publishes to Redpanda (Kafka) which a consumer persists into
-TimescaleDB; `packages/backend` is a working FastAPI with 25 REST endpoints; and
+TimescaleDB; `packages/backend` is a working FastAPI with 28 REST endpoints; and
 `dashboard/src/prototype/` is a Streamlit Digital Twin v1 consuming the backend.
 Superset was dropped - the dashboard strategy is Streamlit now, Vanilla JS +
 Plotly.js later (see `docs/architecture/DASHBOARD_ARCHITECTURE.md`).

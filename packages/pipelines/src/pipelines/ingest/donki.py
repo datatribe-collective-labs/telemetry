@@ -4,7 +4,9 @@ Source: https://ccmc.gsfc.nasa.gov/DONKI-API/get/
 
 The complete DONKI response object is retained in ``payload`` so that event-
 specific schemas are not prematurely normalized. Common timestamps and IDs
-are extracted only for indexing, filtering, and provenance.
+are extracted only for indexing, filtering, and provenance. Rows are keyed on
+``(event_type, event_id)``, so re-running any date range updates rows in place.
+Supported event types are listed in ``EVENT_TYPES`` (also shown by ``--help``).
 
 Run directly, for example:
     uv run --package pipelines python -m pipelines.ingest.donki \

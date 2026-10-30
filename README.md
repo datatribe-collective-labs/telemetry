@@ -1,155 +1,193 @@
 # Telemetry Project - Data Tribe
 
-Open-source telemetry project that ingests, processes, and analyzes mission
-telemetry data in real-time using publicly available NASA flight data.
+Open-source telemetry project building a **digital twin of NASA's Artemis II /
+Orion spacecraft** from publicly available NASA/JPL data.
 
 **What it provides:**
 
-- Real-time ingestion and processing of telemetry streams
-- Storage and analysis of the data
-- Dashboard for real-time monitoring and visualization
+- Batch ingestion of public NASA/JPL APIs and NASA source files into TimescaleDB
+- Synthetic spacecraft telemetry from physics models (state, thermal, power),
+  streamed through Redpanda (Kafka) and persisted to TimescaleDB
+- A FastAPI REST API over both real and synthetic data
+- Streamlit dashboards for monitoring and visualization
 
-## MVP
+The repo holds two related efforts:
 
-Working end-to-end data pipeline:
+1. **Digital twin** (the final target) - `packages/contracts` (ODCS data
+   contracts + Pydantic models), `packages/physics_models` (synthetic telemetry
+   generators + Kafka producer/consumer), `packages/backend` (FastAPI), and the
+   Streamlit prototype in `dashboard/src/prototype/`. State engine, thermal and
+   power are implemented; comms, radiation, packet assembler and anomaly/ML are
+   still placeholders.
+2. **Pipeline explorer** - `packages/pipelines` + `packages/streamlit_dashboard`:
+   a lightweight ETL that ingests each public source into its own table and shows
+   one dashboard page per source. It does not depend on `contracts` or `backend`.
 
-**Source → processing → storage → Dashboard**
+More docs: [`docs/README.md`](docs/README.md) (index),
+[`RUN_SERVICES.md`](RUN_SERVICES.md) (full startup order and troubleshooting),
+[`packages/backend/README.md`](packages/backend/README.md) (API reference).
 
 ## Architecture Diagram
 
 ```mermaid
 flowchart LR
-    Source1(["Data Source 1\nJPL Close-Approach Data (CAD)"])
-    Source2(["Data Source 2\nJPL Orion Telemetry"])
-    Source3(["Data Source 3\nNASA DONKI Space Weather"])
-    Source4(["Data Source 4\nGOES Proton Flux (NASA iSWA)"])
-    Ingest1["Ingest Job\npipelines.ingest.jpl_cad"]
-    Ingest2["Ingest Job\npipelines.ingest.jpl_orion"]
-    Ingest3["Ingest Job\npipelines.ingest.donki"]
-    Ingest4["Ingest Job\npipelines.ingest.iswa_goes_protons"]
-    DB[("TimescaleDB\n")]
-    Dash["Streamlit Dashboard\n"]
+    subgraph Sources["Public NASA / JPL data"]
+        CAD(["JPL CAD API"])
+        HZN(["JPL Horizons\nOrion + DSN geometry"])
+        DONKI(["NASA DONKI"])
+        ISWA(["NASA iSWA HAPI\nGOES protons"])
+        OEM(["NASA OEM arcs\ndata/oem (local)"])
+        EVT(["Mission timeline\n(local, draft)"])
+    end
 
-    Source1 --> Ingest1
-    Source2 --> Ingest2
-    Source3 --> Ingest3
-    Source4 --> Ingest4
-    Ingest1 --> DB
-    Ingest2 --> DB
-    Ingest3 --> DB
-    Ingest4 --> DB
-    DB --> Dash
+    Ingest["pipelines.ingest.*\n(batch, uv run)"]
+    Physics["physics_models\nstate / thermal / power"]
+    Kafka[["Redpanda (Kafka)"]]
+    Consumer["physics_models_consumer"]
+    DB[("TimescaleDB")]
+    API["backend\nFastAPI :8000"]
+    Explorer["Pipeline explorer\nStreamlit :8501"]
+    Proto["Digital twin prototype\nStreamlit :8501"]
+
+    CAD & HZN & DONKI & ISWA & OEM & EVT --> Ingest --> DB
+    OEM --> Physics --> Kafka --> Consumer --> DB
+    DB --> API --> Proto
+    DB --> Explorer
 
     subgraph Docker["Docker"]
         DB
+        Kafka
+        Physics
+        Consumer
     end
 ```
 
-**Data Sources:**
+**Data sources** (one ingest module and one table each):
 
-1. **[JPL Close-Approach Data (CAD) API](https://ssd-api.jpl.nasa.gov/doc/cad.html)** — Upcoming and past close approaches of asteroids/comets to Earth
-2. **[JPL Horizons / Orion](https://ssd-api.jpl.nasa.gov/horizons.html)** — Artemis II Orion spacecraft telemetry
-3. **[NASA CCMC DONKI API](https://ccmc.gsfc.nasa.gov/DONKI-API/get/)** — Space weather events (CME, SEP, FLR, GST, HSS, etc.)
-4. **[NASA CCMC iSWA HAPI](https://iswa.gsfc.nasa.gov/IswaSystemWebApp/hapi/)** — GOES integral proton flux (≥1 … ≥500 MeV, 5-minute)
+| Source | Ingest module | Table |
+|--------|---------------|-------|
+| [JPL Close-Approach Data (CAD)](https://ssd-api.jpl.nasa.gov/doc/cad.html) - asteroid/comet close approaches | `jpl_cad` | `close_approaches` |
+| [JPL Horizons](https://ssd-api.jpl.nasa.gov/doc/horizons.html) - Artemis II Orion ephemeris | `jpl_orion` | `orion_ephemeris` |
+| JPL Horizons - Orion geometry as seen from the DSN sites | `jpl_dsn_geometry` | `dsn_site_geometry` |
+| [NASA CCMC DONKI](https://ccmc.gsfc.nasa.gov/DONKI-API/get/) - space weather events (CME, SEP, FLR, GST, HSS, ...) | `donki` | `donki_events` |
+| [NASA CCMC iSWA HAPI](https://iswa.gsfc.nasa.gov/IswaSystemWebApp/hapi/) - GOES integral proton flux | `iswa_goes_protons` | `goes_integral_protons` |
+| NASA OEM ephemeris arcs (`data/oem/`, no network) | `nasa_oem` | `oem_state_vectors` |
+| Artemis II mission timeline (curated, **draft** data, no network) | `mission_events` | `mission_events` |
 
-Each source has its own ingest job, database table, and dashboard page.
+The synthetic telemetry tables (`state_snapshot`, `thermal_output`,
+`power_output`, `comms_output`, `radiation_output`, `cross_model_state`,
+`telemetry_packet`, `anomaly_events`, `ml_feature_vectors`) are created by the
+backend's Alembic migration and filled by `physics_models_consumer`.
 
 ## What runs where
 
-- **In Docker:** `timescaledb` (via `docker-compose.yml`), on host port
-  **5433** (not 5432 - see `.env.example`; a native Postgres install commonly
-  already owns 5432) - plus the on-demand `tests` service (see "Tests" below).
-- **Not in Docker (run natively via `uv run`):** the ingest job
-  (`pipelines.ingest.jpl_cad`) and the Streamlit dashboard. Both have
-  `Dockerfile`s in their package folders, but those are for a future
-  containerized deployment - the local dev workflow below runs them directly
-  on your machine, talking to the Dockerized database over `localhost:5433`.
+- **In Docker** (`docker-compose.yml`): `timescaledb` (host port **5433**, not
+  5432 - a native Postgres install commonly already owns 5432), `redpanda`
+  (Kafka on `:9092`), `physics_models` (producer) and `physics_models_consumer`,
+  plus the on-demand `tests` service (see "Tests" below).
+- **Natively via `uv run`**: the ingest jobs, the backend API (`:8000`) and the
+  Streamlit dashboards (`:8501`). They talk to the Dockerized database over
+  `localhost:5433`.
 
-## Run locally
+## How to run
 
-### 1. Start the database
+Prerequisites: Docker (with Compose) and [`uv`](https://docs.astral.sh/uv/).
+Run all commands from the **repo root** unless noted.
+
+### 0. One-time setup
+
 ```bash
+cp .env.example .env        # then set POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
+uv sync --all-packages      # one shared .venv with every workspace package
+```
+
+`.env` is read by Docker Compose, the ingest jobs, the backend and the
+dashboards. `DATABASE_URL` is optional; without it, host-side tools connect to
+`localhost:5433` using the three `POSTGRES_*` values.
+
+### Option A - Pipeline explorer only (real data, no Kafka)
+
+```bash
+# 1. Database
 docker compose up -d timescaledb
-```
 
-### 2. Ingest data (run each pipeline as needed)
-
-**JPL Close-Approach Data (CAD):**
-```bash
+# 2. Ingest whichever sources you want (each job creates its own table)
 uv run --package pipelines python -m pipelines.ingest.jpl_cad
-# Options: --date-min now --date-max +60 --dist-max 0.05 --body Earth
-```
-
-**JPL Orion Telemetry:**
-```bash
 uv run --package pipelines python -m pipelines.ingest.jpl_orion
-# (Requires RUN_ORION_TIMESCALE_INTEGRATION=1 for live integration tests)
-```
-
-**NASA DONKI Space Weather Events:**
-```bash
+uv run --package pipelines python -m pipelines.ingest.jpl_dsn_geometry
 uv run --package pipelines python -m pipelines.ingest.donki
-# Options: --start-date 2026-04-01 --end-date 2026-04-10 --event-type CME --event-type SEP
-#          --request-delay 0.2
-```
-
-**GOES Proton Flux (NASA iSWA):**
-```bash
 uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons
-# Options: --start 2026-04-01T00:00:00Z --end 2026-04-12T00:00:00Z
-```
 
-### 3. Launch the dashboard
-```bash
+# 3. Dashboard -> http://localhost:8501
 uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/src/streamlit_dashboard/app.py
 ```
 
-Then open **http://localhost:8501** in your browser.
+Pages: Welcome, Close Approaches, Artemis II Orion, DSN Coverage, NASA DONKI,
+GOES Proton Flux.
 
-### Dashboard Pages
-- **Welcome** — Project overview
-- **Close Approaches** — JPL CAD asteroid/comet close approaches
-- **Artemis II Orion** — Orion spacecraft telemetry
-- **NASA DONKI** — Space weather events (CME, SEP, FLR, GST, HSS, etc.)
-- **GOES Proton Flux** — Integral proton flux vs. the NOAA S1 radiation-storm threshold
+### Option B - Full digital twin (synthetic telemetry + API + prototype dashboard)
 
-Configure via the `DATABASE_URL` environment variable (see `.env.example`).
+```bash
+# 1. Infrastructure
+docker compose up -d timescaledb redpanda
 
-## Checking the ingested data
+# 2. Create the synthetic telemetry tables (before the consumer and the backend)
+cd packages/backend
+uv run --package backend alembic upgrade head
+cd ../..
 
-The data lives in four tables inside the `timescaledb` container. Query them directly with `psql` via Docker - no local client needed:
+# 3. Real data for the backend's real-data endpoints: the Option A ingest jobs, plus
+uv run --package pipelines python -m pipelines.ingest.nasa_oem
+uv run --package pipelines python -m pipelines.ingest.mission_events
 
-**JPL Close Approaches:**
+# 4. Physics models -> Redpanda -> TimescaleDB
+docker compose up -d --build physics_models physics_models_consumer
+
+# 5. Backend API -> http://localhost:8000 (interactive docs at /docs)
+uv run --package backend python -m backend.main
+
+# 6. Prototype dashboard, in a second terminal -> http://localhost:8501
+uv run streamlit run dashboard/src/prototype/app.py
 ```
-docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM close_approaches;"
+
+Prototype pages: Overview / Health, Trajectory, Thermal, Power, Space Weather,
+DSN Coverage. Both dashboards default to port 8501, so run one at a time or pass
+`--server.port 8502` to the second.
+
+The simulator replays the mission from liftoff in real time. To speed it up or
+jump ahead, set `PHYSICS_MODELS_TIME_SCALE` / `PHYSICS_MODELS_START_MET_SECONDS`
+(see "Demo Replay Controls" in [`RUN_SERVICES.md`](RUN_SERVICES.md)). That file
+also covers health checks, stopping services and troubleshooting.
+
+### Ingest options
+
+```bash
+uv run --package pipelines python -m pipelines.ingest.jpl_cad --date-min now --date-max +60 --dist-max 0.05 --body Earth
+uv run --package pipelines python -m pipelines.ingest.donki --start-date 2026-04-01 --end-date 2026-04-10 --event-type CME --event-type SEP --request-delay 0.2
+uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons --start 2026-04-01T00:00:00Z --end 2026-04-12T00:00:00Z
+```
+
+Run any ingest module with `--help` for its full option list.
+
+## Checking the data
+
+Query the `timescaledb` container directly - no local `psql` client needed
+(replace `telemetry` with your `POSTGRES_USER` / `POSTGRES_DB` if they differ):
+
+```
+docker compose exec timescaledb psql -U telemetry -d telemetry -c "\dt"
 docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT des, close_approach_time, dist_au, v_rel_kms FROM close_approaches ORDER BY close_approach_time LIMIT 10;"
-```
-
-**JPL Orion Telemetry:**
-```
-docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM orion_telemetry;"
-```
-
-**NASA DONKI Space Weather Events:**
-```
-docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM donki_events;"
+docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM orion_ephemeris;"
+docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM dsn_site_geometry;"
 docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT event_type, count(*) FROM donki_events GROUP BY event_type ORDER BY count DESC;"
-docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT event_type, event_id, event_time, start_time FROM donki_events ORDER BY COALESCE(event_time, start_time) DESC LIMIT 10;"
-```
-
-**GOES Proton Flux:**
-```
 docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*), min(time), max(time), max(p10_pfu) FROM goes_integral_protons;"
+docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM oem_state_vectors;"
+docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*), max(timestamp_utc) FROM telemetry_packet;"
 ```
 
-Or connect with any Postgres GUI client (DBeaver, TablePlus, pgAdmin, the
-VS Code PostgreSQL extension, etc.) using the `DATABASE_URL` environment variable
-configured in `.env.example`:
-
-```
-# From .env.example
-# DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DB
-```
+You can also query through the API, e.g. `curl "http://localhost:8000/orion?limit=5"`
+or `curl http://localhost:8000/telemetry/synthetic/latest`, or connect any
+Postgres GUI client (DBeaver, TablePlus, pgAdmin, ...) to `localhost:5433`.
 
 ## Tests
 
@@ -168,6 +206,9 @@ Each test file covers one function (e.g.
 `pipelines.ingest.jpl_cad.fetch_close_approaches`), and every test is named
 `test_<function>_<expected behavior>`. HTTP calls are mocked with
 `responses`, database connections with `unittest.mock.MagicMock`.
+
+Unit tests cover all pipeline ingest modules, the backend (`tests/unit/backend`)
+and the physics models (`tests/unit/physics_models`).
 
 ```
 # in Docker - from the repo root
@@ -202,89 +243,3 @@ To add a new source: add its ingest job under
 query module, a `pages/<source>.py` page, and register the page in the
 `pages` list in `app.py`. Add unit tests for the ingest job under
 `tests/unit/pipelines/ingest/<source>/`, following the layout in "Tests" above.
-
----
-
-## NASA DONKI Space Weather — Details
-
-### Supported Event Types
-| Type | Description | ID Field(s) |
-|------|-------------|-------------|
-| `CME` | Coronal Mass Ejection | `activityID`, `cmeID` |
-| `CMEAnalysis` | CME Analysis | `activityID`, `analysisID`, `cmeID`, `associatedCMEID` |
-| `SEP` | Solar Energetic Particle | `sepID`, `activityID` |
-| `FLR` | Solar Flare | `flrID`, `activityID` |
-| `IPS` | Interplanetary Shock | `ipsID`, `activityID` |
-| `GST` | Geomagnetic Storm | `gstID`, `activityID` |
-| `RBE` | Radiation Belt Enhancement | `rbeID`, `activityID` |
-| `HSS` | High Speed Stream | `hssID`, `activityID` |
-| `MPC` | Magnetopause Crossing | `mpcID`, `activityID` |
-| `WSAEnlilSimulations` | WSA-Enlil Simulation | `simulationID`, `activityID` |
-
-### Ingestion Options
-```bash
-# Full backfill for a date range (all event types)
-uv run --package pipelines python -m pipelines.ingest.donki \
-  --start-date 2026-01-01 --end-date 2026-12-31
-
-# Specific event types only
-uv run --package pipelines python -m pipelines.ingest.donki \
-  --start-date 2026-04-01 --end-date 2026-04-10 \
-  --event-type CME --event-type SEP --event-type FLR
-
-# Adjust rate limiting (default 0.2s between requests)
-uv run --package pipelines python -m pipelines.ingest.donki \
-  --request-delay 0.5
-```
-
-### Database Schema
-The `donki_events` table retains the **complete DONKI JSON payload** in a `JSONB` column (`payload`), enabling future schema evolution without re-ingestion. Common fields are extracted for indexing:
-- `event_type` — One of the 10 types above
-- `event_id` — Type-specific ID (e.g., `activityID` for CME)
-- `start_time` / `end_time` / `event_time` — Canonical timestamps (UTC)
-- `source_url` — Full API URL used for the fetch
-- `fetched_at` — Ingestion timestamp (auto)
-
-Indexes exist on `start_time` and `(event_type, event_time)` for efficient time-range queries.
-
-### Dashboard Features
-The **NASA DONKI** dashboard page provides:
-- **Sidebar filters**: Date range, multi-select event types
-- **Metrics**: Total events, unique event types, events with timestamps
-- **Inventory table**: Count per event type
-- **Events table**: All events with type, ID, timestamps
-- **Raw JSON viewer**: Select any event to view the complete DONKI payload
-
-### Correlation with Other Sources
-DONKI events provide space weather context for:
-- **Orion telemetry** — SEP/GST events correlate with radiation sensor spikes
-- **Close approaches** — CME/HSS affect solar wind density (drag, comms)
-
-All sources share `TIMESTAMPTZ` columns enabling temporal joins for multi-source analysis.
-
----
-
-## GOES Proton Flux (NASA iSWA) — Details
-
-Integral proton flux from the primary GOES satellite, read from the NASA CCMC
-iSWA [HAPI](https://hapi-server.org/) service (dataset `goesp_part_flux_P5M`)
-as JSON. It is the radiation-environment input for the digital twin, and the
-"NOAA operational ≥10 MeV comparison" reference named in
-`docs/integration/sgps_ge10_proton_flux.md`.
-
-- **Real-time product.** This is NOAA's real-time feed - provisional, not the
-  reprocessed science archive. The ingest itself runs on demand; the feed is
-  current to within minutes, so a scheduled run can keep the table near-live.
-- **Satellite per row.** The satellite behind the "primary" proton feed can
-  change; it is stored in `proton_satellite` (GOES-18 for the Artemis II window).
-- **Units.** All `p*_pfu` columns are integral flux in pfu
-  (protons / cm² · s · sr). HAPI fill values (`-100000`, `"null"`) are stored as `NULL`.
-- **HAPI quirk.** Requested parameters must follow the dataset's own order,
-  otherwise the API returns error 1411 - see `PROTON_PARAMETERS` in the ingest module.
-
-The `goes_integral_protons` hypertable has one row per 5-minute sample (`time`
-primary key), so re-running any range updates rows in place.
-
-The **GOES Proton Flux** dashboard page shows a log-scale chart of the selected
-energy channels with the NOAA S1 threshold (10 pfu at ≥10 MeV), the peak ≥10
-MeV flux and its NOAA S-scale level, and the raw table.

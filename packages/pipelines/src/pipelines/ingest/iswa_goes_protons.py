@@ -9,6 +9,10 @@ science-quality archive). The satellite behind the "primary" proton feed can
 change over time, so it is stored per row in `proton_satellite`. Electron
 channels are not ingested.
 
+All `p*_pfu` columns are integral flux in pfu (protons / cm^2 s sr); HAPI fill
+values are stored as NULL. One row per 5-minute sample (`time` primary key), so
+re-running any range updates rows in place.
+
 Fair-use: a single sequential request per run, no concurrency.
 
 Run directly, for example:
