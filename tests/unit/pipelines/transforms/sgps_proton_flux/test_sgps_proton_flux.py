@@ -88,7 +88,7 @@ class TestChannelsFromTableRows:
             self._make_row(0, 1.0, 1.0, 5.0),
             self._make_row(13, 100.0, 500.0, 0.0),
         ]
-        channels, gt500 = channels_from_table_rows(rows, differential_units=DIFFERENTIAL_PER_MEV)
+        channels, _gt500 = channels_from_table_rows(rows, differential_units=DIFFERENTIAL_PER_MEV)
 
         assert channels[0].flux == 1.0  # unchanged
 

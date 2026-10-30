@@ -174,8 +174,14 @@ Each test file covers one function (e.g.
 docker compose run --rm tests
 
 # or natively - also from the repo root
-uv run --package pipelines pytest tests/unit
+uv sync --all-packages   # ensure the shared root venv has every workspace package
+uv run pytest tests/unit
 ```
+
+The root `uv run pytest` reuses the single shared `.venv`. A partial
+`uv sync --package <pkg>` can prune other workspace packages from it, making
+imports like `pydantic`/`fastapi` fail at test collection. Run
+`uv sync --all-packages` first if you hit `ModuleNotFoundError` in tests.
 
 Live datasource and database checks belong under `tests/integration/` and have
 their own datasource-specific runner.

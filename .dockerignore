@@ -1,0 +1,31 @@
+# Keep Docker build context small and reproducible
+.git/
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.env
+
+# Not needed by any Docker image
+docs/
+dashboard/
+superset/
+airflow/
+tests/
+.github/
+*.md
+COMMIT_PLAN.md
+CLAUDE.md
+
+# Data ignored, except the OEM zip explicitly copied by the physics_models image
+data/
+!data/oem/
+!data/oem/all-artemis-ii-oem-files.zip
+
+# Package sources are copied explicitly per-image
+packages/
+!packages/contracts
+!packages/physics_models
+!packages/backend
+!packages/pipelines
+!packages/streamlit_dashboard

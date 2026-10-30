@@ -43,18 +43,18 @@ def make_geometry():
     """Factory for a valid DsnSiteGeometry; pass keyword overrides per test."""
 
     def _make(**overrides) -> DsnSiteGeometry:
-        defaults = dict(
-            target_id="-1024",
-            site="DSS-14",
-            complex="Goldstone",
-            epoch=datetime(2026, 4, 5, 9, 0, tzinfo=UTC),
-            azimuth_deg=112.40281,
-            elevation_deg=18.312345,
-            range_km=329922.0,
-            range_rate_kms=-0.4123456,
-            light_time_s=1.100898,
-            visible=True,
-        )
+        defaults = {
+            "target_id": "-1024",
+            "site": "DSS-14",
+            "complex": "Goldstone",
+            "epoch": datetime(2026, 4, 5, 9, 0, tzinfo=UTC),
+            "azimuth_deg": 112.40281,
+            "elevation_deg": 18.312345,
+            "range_km": 329922.0,
+            "range_rate_kms": -0.4123456,
+            "light_time_s": 1.100898,
+            "visible": True,
+        }
         defaults.update(overrides)
         return DsnSiteGeometry(**defaults)
 

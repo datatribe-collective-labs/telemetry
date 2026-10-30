@@ -5,38 +5,33 @@
 #
 #   docker build -f packages/pipelines/Dockerfile -t telemetry-pipelines .
 #
-# This image is expected to be heavy (PySpark, and later PyTorch) — that's
-# fine, it's isolated from backend and only rebuilt when pipeline code or
-# pipeline deps change.
-FROM python:3.12-slim AS base
+# NOTE: no JDK is installed. The pipelines package has no PySpark dependency
+# (see pyproject.toml); if PySpark is reintroduced, target Spark 4.x and
+# install openjdk-21-jre-headless (Spark 4.x supports Java 17/21/25, but only
+# 21 and 25 are packaged on the Debian trixie base).
+FROM python:3.12-slim@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704 AS base
 
-# Java is required for PySpark
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends openjdk-17-jre-headless \
-    && rm -rf /var/lib/apt/lists/*
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+COPY --from=ghcr.io/astral-sh/uv:0.9.5 /uv /uvx /usr/local/bin/
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+# Create non-root user up front; COPY --chown avoids a recursive chown layer
+RUN useradd --create-home --uid 10001 app && mkdir -p /app && chown app:app /app
 
 WORKDIR /app
+USER app
 
-# ---- Copy only what's needed to resolve deps first (better layer caching) ----
-COPY pyproject.toml uv.lock ./
-COPY packages/contracts/pyproject.toml packages/contracts/pyproject.toml
-COPY packages/pipelines/pyproject.toml packages/pipelines/pyproject.toml
+# ---- Copy workspace manifests + sources ----
+# (Full sources are needed up front: uv builds real (non-editable) wheels for
+# workspace members, which requires their src/ trees.)
+COPY --chown=app:app pyproject.toml uv.lock ./
+COPY --chown=app:app packages/contracts packages/contracts
+COPY --chown=app:app packages/pipelines packages/pipelines
 
-# Resolve + install ONLY pipelines + its deps (contracts, pyspark, kafka...).
-# Nothing from backend (fastapi, uvicorn) is pulled in.
-RUN uv sync --package pipelines --frozen --no-dev --no-install-project
-
-# ---- Now copy actual source and install the packages themselves ----
-COPY packages/contracts packages/contracts
-COPY packages/pipelines packages/pipelines
-
-RUN uv sync --package pipelines --frozen --no-dev
+# Resolve + install ONLY pipelines + its deps (contracts, pyspark, kafka...),
+# locked to uv.lock. Nothing from backend (fastapi, uvicorn) is pulled in.
+RUN uv sync --package pipelines --frozen --no-dev --no-editable
 
 # No CMD by default — this image runs different entrypoints depending on
 # which pipeline job it's launched for (ingest, state_engine, kafka_producers,
 # etc.), typically set per-Job/CronJob in the k8s manifest, e.g.:
 #
-#   command: ["uv", "run", "--package", "pipelines", "python", "-m", "pipelines.ingest.jpl_horizons"]
+#   command: ["/app/.venv/bin/python", "-m", "pipelines.ingest.jpl_horizons"]

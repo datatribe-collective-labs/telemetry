@@ -37,7 +37,7 @@ class TestUpsertDonkiEvents:
         count = upsert_donki_events(mock_connection, [record1, record2])
 
         assert count == 2
-        sql, params = mock_connection.mock_cursor.executemany.call_args.args
+        _sql, params = mock_connection.mock_cursor.executemany.call_args.args
         assert len(params) == 2
         assert params[0]["event_id"] == cme_payload[0]["activityID"]
         assert params[1]["event_id"] == cme_payload[1]["activityID"]
@@ -49,7 +49,7 @@ class TestUpsertDonkiEvents:
 
         upsert_donki_events(mock_connection, [record])
 
-        sql, params = mock_connection.mock_cursor.executemany.call_args.args
+        _sql, params = mock_connection.mock_cursor.executemany.call_args.args
         payload_str = params[0]["payload"]
         # Should be a JSON string, not a dict
         assert isinstance(payload_str, str)
@@ -63,7 +63,7 @@ class TestUpsertDonkiEvents:
 
         upsert_donki_events(mock_connection, [record])
 
-        sql, params = mock_connection.mock_cursor.executemany.call_args.args
+        sql, _params = mock_connection.mock_cursor.executemany.call_args.args
         # Verify all expected columns are in the INSERT
         assert "event_type" in sql
         assert "event_id" in sql
@@ -91,6 +91,6 @@ class TestUpsertDonkiEvents:
         count = upsert_donki_events(mock_connection, [cme_record, sep_record])
 
         assert count == 2
-        sql, params = mock_connection.mock_cursor.executemany.call_args.args
+        _sql, params = mock_connection.mock_cursor.executemany.call_args.args
         assert params[0]["event_type"] == "CME"
         assert params[1]["event_type"] == "SEP"

@@ -197,7 +197,9 @@ def fetch_donki_event_type(
     payload = response.json()
 
     if not isinstance(payload, list):
-        raise RuntimeError(
+        # Not a caller-type error but a malformed upstream payload; RuntimeError
+        # is the better semantic fit here.
+        raise RuntimeError(  # noqa: TRY004
             f"Unexpected DONKI response for {event_type}: "
             f"expected a JSON array, got {type(payload).__name__}"
         )

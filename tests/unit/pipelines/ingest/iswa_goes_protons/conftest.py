@@ -12,18 +12,18 @@ def make_goes_proton_flux():
     """Factory for a valid GoesProtonFlux; pass keyword overrides per test."""
 
     def _make(**overrides) -> GoesProtonFlux:
-        defaults = dict(
-            time=datetime(2026, 4, 1, 22, 0, tzinfo=UTC),
-            proton_satellite="GOES-18",
-            p1_pfu=463.37,
-            p5_pfu=3.23,
-            p10_pfu=0.34,
-            p30_pfu=0.158,
-            p50_pfu=0.153,
-            p60_pfu=0.151,
-            p100_pfu=0.149,
-            p500_pfu=0.140,
-        )
+        defaults = {
+            "time": datetime(2026, 4, 1, 22, 0, tzinfo=UTC),
+            "proton_satellite": "GOES-18",
+            "p1_pfu": 463.37,
+            "p5_pfu": 3.23,
+            "p10_pfu": 0.34,
+            "p30_pfu": 0.158,
+            "p50_pfu": 0.153,
+            "p60_pfu": 0.151,
+            "p100_pfu": 0.149,
+            "p500_pfu": 0.140,
+        }
         defaults.update(overrides)
         return GoesProtonFlux(**defaults)
 

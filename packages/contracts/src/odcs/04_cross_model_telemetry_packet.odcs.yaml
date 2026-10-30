@@ -31,7 +31,9 @@ servers:
     environment: production
     type: kafka
     host: ${KAFKA_BOOTSTRAP_SERVERS}
-    topic: ${KAFKA_CROSS_MODEL_TOPIC}
+    customProperties:
+      - property: topic
+        value: ${KAFKA_CROSS_MODEL_TOPIC}
 
 schema:
   - id: cross_model_state
@@ -55,8 +57,8 @@ schema:
           - metric: nullValues
             mustBe: 0
 
-      - id: electronics_bay_temp_K
-        name: electronics_bay_temp_K
+      - id: electronics_bay_temp_k
+        name: electronics_bay_temp_k
         businessName: Electronics bay temperature from thermal model (K)
         logicalType: number
         physicalType: DOUBLE
@@ -71,8 +73,8 @@ schema:
               bound is asserted here because the Orion-specific bay qualification range
               is UNVERIFIED.
 
-      - id: power_dissipation_W
-        name: power_dissipation_W
+      - id: power_dissipation_w
+        name: power_dissipation_w
         businessName: Waste heat from electronics (W)
         logicalType: number
         physicalType: DOUBLE
@@ -88,8 +90,8 @@ schema:
               relationship. The previous fixed 8% factor and [64,400] W bounds are
               MODEL_ASSUMPTIONS, not source-supported physics; do not enforce them as hard limits.
 
-      - id: available_power_W
-        name: available_power_W
+      - id: available_power_w
+        name: available_power_w
         businessName: Available power for non-essential loads (W)
         logicalType: number
         physicalType: DOUBLE
@@ -220,7 +222,9 @@ servers:
     environment: production
     type: kafka
     host: ${KAFKA_BOOTSTRAP_SERVERS}
-    topic: ${KAFKA_TELEMETRY_TOPIC}
+    customProperties:
+      - property: topic
+        value: ${KAFKA_TELEMETRY_TOPIC}
   - server: ${TIMESCALE_PRODUCTION_SERVER}
     environment: production
     type: postgresql
@@ -304,8 +308,8 @@ schema:
               validValues: [ORION_EM2]
 
       # ── Thermal fields (bounds from thermal_model_output contract) ──
-      - id: telem_temp_sun_face_K
-        name: temp_sun_face_K
+      - id: telem_temp_sun_face_k
+        name: temp_sun_face_k
         logicalType: number
         physicalType: DOUBLE
         required: true
@@ -315,8 +319,8 @@ schema:
           - type: text
             description: "Temperature must be > 0 K; no unsupported 450 K hard ceiling is asserted. See thermal contract."
 
-      - id: telem_temp_shadow_face_K
-        name: temp_shadow_face_K
+      - id: telem_temp_shadow_face_k
+        name: temp_shadow_face_k
         logicalType: number
         physicalType: DOUBLE
         required: true
@@ -326,8 +330,8 @@ schema:
           - type: text
             description: "Temperature must be > 0 K; no unsupported 350 K hard ceiling is asserted. See thermal contract."
 
-      - id: telem_temp_electronics_bay_K
-        name: temp_electronics_bay_K
+      - id: telem_temp_electronics_bay_k
+        name: temp_electronics_bay_k
         logicalType: number
         physicalType: DOUBLE
         required: true
@@ -361,8 +365,8 @@ schema:
               validValues: [NOMINAL, COLD_SURVIVAL, HOT_LIMIT]
 
       # ── Power fields (bounds from power_model_output contract) ──
-      - id: telem_battery_voltage_V
-        name: battery_voltage_V
+      - id: telem_battery_voltage_v
+        name: battery_voltage_v
         logicalType: number
         physicalType: DOUBLE
         required: true
@@ -384,8 +388,8 @@ schema:
           - type: text
             description: "Critical. Bounds: 0.0 ≤ battery_soc_pct ≤ 100.0. See power contract."
 
-      - id: telem_solar_array_power_W
-        name: solar_array_power_W
+      - id: telem_solar_array_power_w
+        name: solar_array_power_w
         logicalType: number
         physicalType: DOUBLE
         required: true
@@ -427,8 +431,8 @@ schema:
           - type: text
             description: "Bounds: 0.0 ≤ signal_quality ≤ 1.0. See comms contract."
 
-      - id: telem_link_margin_dB
-        name: link_margin_dB
+      - id: telem_link_margin_db
+        name: link_margin_db
         logicalType: number
         physicalType: DOUBLE
         required: true

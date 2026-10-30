@@ -24,3 +24,8 @@ addopts = "--import-mode=importlib"
 dev = [
     "ruff>=0.16.10",
 ]
+
+[tool.ruff.lint]
+# B008: FastAPI's canonical pattern is `param = Query(...) / Depends(...)` in
+# argument defaults — flagging it would fight the framework.
+ignore = ["B008"]
