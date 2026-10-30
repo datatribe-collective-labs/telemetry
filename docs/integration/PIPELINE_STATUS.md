@@ -35,7 +35,7 @@ Tables already exist via `packages/backend/alembic/versions/611662aa06a2_add_syn
 All columns are **lowercase** (PostgreSQL default).
 
 ### 5. Backend API (`packages/backend/src/backend/api/routes/synthetic.py`)
-12 synthetic telemetry endpoints with lowercase column lists (25 REST endpoints total incl. real data + health):
+12 synthetic telemetry endpoints with lowercase column lists (28 REST endpoints total incl. real data + health):
 - `GET /telemetry/synthetic/state`
 - `GET /telemetry/synthetic/state/{timestamp_utc}`
 - `GET /telemetry/synthetic/thermal`

@@ -2,12 +2,11 @@
 
 Source: `contracts.planned_attitude` — the truth model extracted
 from the NASA "Artemis II Overview Timeline - FINAL" PDF (graphical document; the
-code module is the debuggable, versioned form — see
-docs/guides/PROMPT_PDF_ATTITUDE_PARSING.md).
+code module is the debuggable, versioned form).
 
 ⚠️ DRAFT DATA: the extracted timeline has not yet been fact-checked against the
 PDF. Consumers must treat `mission_events` as unvalidated until that review is
-done (tracked in docs/guides/ARTEMIS_II_RESEARCH_QUESTIONS.md).
+done (tracked in docs/guides/TIMELINE_FACTCHECK_CHECKLIST.md).
 
 Each row is one contiguous attitude segment keyed by Mission Elapsed Time.
 The dashboard v1 timeline strip and mission-phase logic read this table.

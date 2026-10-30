@@ -38,7 +38,7 @@ Source → Processing → Storage → Dashboard
 | **Kafka Producer** | ✅ Working | Produces to 4 topics (`trajectory`, `telemetry`, `cross_model_state`, `ml_features`) at 1 Hz; `events` reserved for anomaly detector (not implemented) |
 | **Kafka Consumer** | ✅ Working | Consumes → TimescaleDB with upsert logic, demultiplexes telemetry topic |
 | **Database Schema (Alembic)** | ✅ Applied | 9 hypertables: `state_snapshot`, `thermal_output`, `power_output`, `comms_output`, `radiation_output`, `telemetry_packet`, `cross_model_state`, `ml_feature_vectors`, `anomaly_events` |
-| **Backend API** | ✅ 12 Synthetic Endpoints | `/telemetry/synthetic/*` — all return lowercase JSON keys (25 endpoints total incl. real data + health) |
+| **Backend API** | ✅ 12 Synthetic Endpoints | `/telemetry/synthetic/*` — all return lowercase JSON keys (28 endpoints total incl. real data + health) |
 | **Streamlit Prototype Dashboard** | ✅ 6 Pages | Overview, Trajectory, Thermal, Power, Space Weather, DSN Coverage |
 | **Docker Compose Stack** | ✅ Running | `redpanda`, `timescaledb`, `physics_models`, `physics_models_consumer` all healthy |
 | **Real Data Pipelines** | ✅ 5 Ingest Modules | JPL CAD, JPL Orion (Horizons), NASA DONKI, GOES Proton Flux (iSWA), JPL DSN Geometry (Horizons observer) |
@@ -72,8 +72,7 @@ Physics Models (1 Hz) → Kafka (Redpanda) → Consumer → TimescaleDB → Back
 
 > ⚠️ Comms/radiation/packet/ml_features rows above still reflect **placeholder data** from
 > `runner.py` — they validate the *pipeline*, not model correctness. Trajectory, thermal and
-> power however are real model outputs driven by the NASA OEM arcs since 2026-10-19
-> (see `docs/integration/CONTRACT_PHYSICS_AUDIT.md`).
+> power however are real model outputs driven by the NASA OEM arcs since 2026-10-19.
 
 ### 2.4 📋 Key Technical Decisions (Locked In)
 
@@ -317,7 +316,7 @@ telemetry/
 ├── README.md                         # Project overview & quickstart
 ├── RUN_SERVICES.md                   # Service startup guide
 ├── docs/                             # Project documentation (see docs/README.md index)
-│   ├── overview/                     # PROJECT_OVERVIEW.md (this file), DATA_SOURCE_ANALYSIS.md
+│   ├── overview/                     # PROJECT_OVERVIEW.md (this file)
 │   ├── architecture/                 # DASHBOARD_ARCHITECTURE.md, PHYSICS_MODELS_ARCHITECTURE.md
 │   ├── integration/                  # PIPELINE_STATUS.md, PHYSICS_MODELS_CONTRACT_COMPLIANCE.md, sgps_ge10_proton_flux.md
 │   ├── guides/                       # Walkthroughs, prompts, debugging records
@@ -433,11 +432,11 @@ telemetry/
 │
 └── docs/                             # (index: docs/README.md)
     ├── README.md                     # Documentation index — start here
-    ├── overview/                     # PROJECT_OVERVIEW.md, DATA_SOURCE_ANALYSIS.md
+    ├── overview/                     # PROJECT_OVERVIEW.md
     ├── architecture/                 # DASHBOARD_ARCHITECTURE.md, PHYSICS_MODELS_ARCHITECTURE.md
     ├── integration/                  # PIPELINE_STATUS.md, PHYSICS_MODELS_CONTRACT_COMPLIANCE.md, sgps_ge10_proton_flux.md
-    ├── guides/                       # orion-testing-walkthrough.md, PROMPT_PDF_ATTITUDE_PARSING.md, DEBUG_DOCKER_PHYSICS_MODELS.md
-    └── decisions/                    # SPARK_SCALE_REQUIREMENTS.md, testing-infrastructure-plan.md
+    ├── guides/                       # DEBUG_DOCKER_PHYSICS_MODELS.md, TIMELINE_FACTCHECK_CHECKLIST.md
+    └── decisions/                    # SPARK_SCALE_REQUIREMENTS.md
 
 ```
 
