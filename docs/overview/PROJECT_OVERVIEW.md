@@ -435,8 +435,8 @@ telemetry/
     ├── overview/                     # PROJECT_OVERVIEW.md
     ├── architecture/                 # DASHBOARD_ARCHITECTURE.md, PHYSICS_MODELS_ARCHITECTURE.md
     ├── integration/                  # PIPELINE_STATUS.md, PHYSICS_MODELS_CONTRACT_COMPLIANCE.md, sgps_ge10_proton_flux.md
-    ├── guides/                       # orion-testing-walkthrough.md, PROMPT_PDF_ATTITUDE_PARSING.md, DEBUG_DOCKER_PHYSICS_MODELS.md
-    └── decisions/                    # SPARK_SCALE_REQUIREMENTS.md, testing-infrastructure-plan.md
+    ├── guides/                       # DEBUG_DOCKER_PHYSICS_MODELS.md, TIMELINE_FACTCHECK_CHECKLIST.md
+    └── decisions/                    # SPARK_SCALE_REQUIREMENTS.md
 
 ```
 
