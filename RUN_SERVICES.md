@@ -147,6 +147,16 @@ docker compose up -d --force-recreate physics_models
 Thermal/power dynamics scale with sim time (heater cycles, SOC curves stay physically
 meaningful); dashboards just plot the sim timestamps — nothing to change there.
 
+**Seeking backwards leaves stale rows on top.** Synthetic tables are keyed on the sim
+`timestamp_utc` (no write-time column), and the Digital Twin dashboard shows the
+newest timestamps. If you restart at an *earlier* MET than a previous run reached, that
+run's later rows still sort first and the live pages look frozen. Clear the synthetic
+tables before seeking backwards:
+
+```bash
+docker compose exec timescaledb psql -U telemetry -d telemetry -c "TRUNCATE state_snapshot, thermal_output, power_output, comms_output, radiation_output, cross_model_state, telemetry_packet, anomaly_events, ml_feature_vectors;"
+```
+
 Reference METs (official timeline): ICPS Sep 0/03:24 (12,240 s) · TLI ~1/01:37 (92,220 s) ·
 Lunar SOI entry 4/06:59 · close approach 5/01:23:20 (433,400 s) · splashdown 9/01:46.
 
