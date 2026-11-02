@@ -71,8 +71,9 @@ class BackendAPI:
         date_to: datetime | None = None,
         limit: int = 100,
         offset: int = 0,
+        order: str = "desc",
     ) -> SyntheticStateResponse:
-        params = {"limit": limit, "offset": offset}
+        params = {"limit": limit, "offset": offset, "order": order}
         if date_from:
             params["date_from"] = date_from.isoformat()
         if date_to:
@@ -86,8 +87,9 @@ class BackendAPI:
         thermal_state: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        order: str = "desc",
     ) -> SyntheticThermalResponse:
-        params = {"limit": limit, "offset": offset}
+        params = {"limit": limit, "offset": offset, "order": order}
         if date_from:
             params["date_from"] = date_from.isoformat()
         if date_to:
@@ -103,8 +105,9 @@ class BackendAPI:
         power_state: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        order: str = "desc",
     ) -> SyntheticPowerResponse:
-        params = {"limit": limit, "offset": offset}
+        params = {"limit": limit, "offset": offset, "order": order}
         if date_from:
             params["date_from"] = date_from.isoformat()
         if date_to:
@@ -123,8 +126,9 @@ class BackendAPI:
         comm_state: str | None = None,
         limit: int = 100,
         offset: int = 0,
+        order: str = "desc",
     ) -> SyntheticTelemetryPacketResponse:
-        params = {"limit": limit, "offset": offset}
+        params = {"limit": limit, "offset": offset, "order": order}
         if date_from:
             params["date_from"] = date_from.isoformat()
         if date_to:

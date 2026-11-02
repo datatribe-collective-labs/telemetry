@@ -32,7 +32,9 @@ compatibility.
 All under the `/telemetry/synthetic` prefix (kept separate from real JPL/NASA
 data endpoints, which have no prefix). All list endpoints support
 pagination (`limit`, `offset`) and ISO `date_from`/`date_to` filters, and
-return `{items, total, limit, offset}`.
+return `{items, total, limit, offset}`. They also accept `order=asc|desc`
+(default `asc`): with `desc`, `limit`/`offset` page backwards from the newest
+`timestamp_utc`, which is what a live view wants once a table outgrows `limit`.
 
 | Endpoint | Extra filters |
 |----------|---------------|
