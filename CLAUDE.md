@@ -151,7 +151,7 @@ the two are off by ~69 s.
   A new source is a new self-contained `pipelines/ingest/jpl_<source>.py` module,
   following that same shape - don't centralize per-source schema logic into `db.py`.
 - **`packages/streamlit_dashboard`** is a multi-page Streamlit app (`st.navigation`/
-  `st.Page`, requires `streamlit>=1.36`):
+  `st.Page`, requires `streamlit>=1.37`):
   - `data/engine.py` - the one shared piece, a `@st.cache_resource`-cached
     `get_engine()`.
   - `data/<source>.py` - one `@st.cache_data`-cached query module per data source.
