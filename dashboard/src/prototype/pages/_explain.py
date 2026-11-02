@@ -43,10 +43,12 @@ the vehicle rides to them, i.e. *margin*, which is what trend-watchers actually 
 """,
     # ---- Trajectory page ----
     "trajectory.3d": """
-**What:** Earth-centered map (EME2000 frame) of where Orion is. The wide blue band is
-the real path from NASA/JPL; the thin orange line is the digital twin's simulated path,
-ending at the big orange "Orion now" dot (the latest simulated tick). The blue diamond
-marks the farthest point from Earth in the real data, which is the lunar flyby.
+**What:** Earth-centered map (EME2000 frame) of where Orion is. Earth is in the middle
+and the dotted rings show distance from Earth. The wide blue band is the real path from
+NASA/JPL; the thin orange line is the digital twin's simulated path, ending at the big
+orange "Orion is here" dot (the latest simulated tick). The star marks the farthest
+point from Earth in the real data, which is the lunar flyby. The numbers above the map
+change on every refresh, since a few km per update is too small to see on the map.
 
 **How:** "Top-down (2D)" looks down on Earth's North Pole (the X-Y plane); "3D" can be
 rotated with the mouse. Zoom with the scroll wheel or by dragging a box; double-click

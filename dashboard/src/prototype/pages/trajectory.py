@@ -78,6 +78,10 @@ def fetch_real_orion(date_from, date_to, limit):
 REAL_COLOR = "#1F77B4"
 SYN_COLOR = "#FF7F0E"
 EARTH_COLOR = "#2E86DE"
+RING_COLOR = "#B0B7C3"
+LIFTOFF = datetime(2026, 4, 1, 22, 35, tzinfo=UTC)
+EARTH_DIAMETER_KM = 12_742
+JET_SPEED_KMH = 900
 
 
 def _hover_fields(df: pd.DataFrame) -> pd.DataFrame:
@@ -89,8 +93,81 @@ def _hover_fields(df: pd.DataFrame) -> pd.DataFrame:
     })
 
 
+def orion_readout(syn_df: pd.DataFrame) -> None:
+    """Big live numbers about the simulated Orion; they visibly change on every refresh,
+    unlike the map, where a few km per update is far too small to see."""
+    now = syn_df.iloc[-1]
+    pos = np.array([now["x_km"], now["y_km"], now["z_km"]])
+    vel = np.array([now["vx_kms"], now["vy_kms"], now["vz_kms"]])
+    dist = float(np.linalg.norm(pos))
+    speed_kmh = float(np.linalg.norm(vel)) * 3600
+    heading_away = float(pos @ vel) > 0
+    tick = now["timestamp_utc"]
+
+    # Remember the previous tick (for "since last update") and the first tick this
+    # session saw (for "moved since you opened this page"); reset if the replay restarts.
+    state = st.session_state
+    last = state.get("traj_last")
+    if last is None or tick < last[0]:
+        delta = None
+    elif tick == last[0]:
+        delta = last[2]
+    else:
+        delta = dist - last[1]
+    state["traj_last"] = (tick, dist, delta)
+    first = state.get("traj_first")
+    if first is None or tick < first[0]:
+        first = state["traj_first"] = (tick, pos)
+    moved = float(np.linalg.norm(pos - first[1]))
+
+    if delta is None:
+        delta_text = None
+    elif abs(delta) < 0.5:
+        delta_text = "about the same as last update"
+    else:
+        delta_text = f"{delta:+,.0f} km since last update"
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("📏 Distance from Earth", f"{dist:,.0f} km", delta=delta_text, delta_color="off")
+        st.caption(f"As far as **{dist / EARTH_DIAMETER_KM:,.0f} Earths** lined up in a row")
+    with c2:
+        st.metric("💨 Speed", f"{speed_kmh:,.0f} km/h")
+        st.caption(f"About **{speed_kmh / JET_SPEED_KMH:,.1f}×** as fast as a passenger jet")
+    with c3:
+        st.metric("🧭 Direction", "Heading away 🚀" if heading_away else "Coming home 🏠")
+        st.caption("Away from Earth or back toward it")
+    with c4:
+        st.metric("🛰️ Moved since you opened this page", f"{moved:,.0f} km")
+        st.caption(f"Mission day **{(tick - LIFTOFF).days + 1}** · {tick:%b %d %H:%M:%S} UTC")
+
+
+def _ring_step(max_km: float) -> int:
+    """Ring spacing that gives at most 5 distance rings."""
+    for step in (10_000, 25_000, 50_000, 100_000):
+        if max_km / step <= 5:
+            return step
+    return 200_000
+
+
+def _break_at_jumps(df: pd.DataFrame, gap: pd.Timedelta = pd.Timedelta("2min")) -> pd.DataFrame:
+    """Insert a blank row wherever the replay jumped in time (e.g. after a seek), so the
+    line is not drawn straight across the jump as if Orion had flown there."""
+    jumps = np.flatnonzero(df["timestamp_utc"].diff() > gap)
+    if not len(jumps):
+        return df
+    blank = pd.DataFrame({c: [pd.NaT if c == "timestamp_utc" else np.nan] for c in df.columns})
+    parts, prev = [], 0
+    for j in jumps:
+        parts += [df.iloc[prev:j], blank]
+        prev = j
+    parts.append(df.iloc[prev:])
+    return pd.concat(parts, ignore_index=True)
+
+
 def trajectory_map(real_df: pd.DataFrame, syn_df: pd.DataFrame, three_d: bool) -> go.Figure:
-    """Earth-centered map of the real and simulated paths, with labeled landmarks.
+    """Earth-centered map: distance rings instead of X/Y/Z axes, the real and simulated
+    paths, and labeled Earth / Orion / farthest-point landmarks.
 
     2D is the EME2000 X-Y plane, i.e. looking down on Earth's North Pole.
     """
@@ -101,53 +178,67 @@ def trajectory_map(real_df: pd.DataFrame, syn_df: pd.DataFrame, three_d: bool) -
         return {"x": df["x_km"], "y": df["y_km"], **({"z": df["z_km"]} if three_d else {})}
 
     # Labels are arrow annotations offset in different directions (ax/ay, in pixels), so
-    # "Earth" and "Orion now" stay readable while Orion is still close to Earth.
+    # "Earth" and "Orion" stay readable while Orion is still close to Earth.
     annotations = []
 
     def landmark(x, y, z, name, text, symbol, color, size, ax, ay):
         point = {"x": [x], "y": [y], **({"z": [z]} if three_d else {})}
         annotations.append({"x": x, "y": y, **({"z": z} if three_d else {}), "text": text, "ax": ax, "ay": ay,
-                            "showarrow": True, "arrowhead": 0, "arrowcolor": color, "font": {"size": 12},
-                            "bgcolor": "rgba(255,255,255,0.8)"})
-        return trace(**point, mode="markers", name=name,
+                            "showarrow": True, "arrowhead": 0, "arrowcolor": color, "font": {"size": 13},
+                            "bgcolor": "rgba(255,255,255,0.85)"})
+        return trace(**point, mode="markers", name=name, showlegend=False,
                      marker={"size": size, "color": color, "symbol": symbol, "line": {"color": "white", "width": 2}},
                      hoverinfo="text", hovertext=[text.replace("<br>", " · ")])
 
     fig = go.Figure()
-    fig.add_trace(landmark(0, 0, 0, "Earth", "<b>Earth</b>", "circle", EARTH_COLOR, 14, 45, 30))
+
+    # Distance rings around Earth (in the X-Y plane), labeled at the upper right in 2D and
+    # on the camera-facing side in 3D (where the labels spread apart instead of stacking).
+    dists = [_hover_fields(df)["dist_km"].max() for df in (real_df, syn_df) if not df.empty]
+    max_km = max([d for d in dists if pd.notna(d)] or [10_000])
+    step = _ring_step(max_km)
+    theta = np.linspace(0, 2 * np.pi, 181)
+    for r in range(step, int(np.ceil(max_km / step)) * step + 1, step):
+        ring = {"x": r * np.cos(theta), "y": r * np.sin(theta), **({"z": np.zeros_like(theta)} if three_d else {})}
+        fig.add_trace(trace(**ring, mode="lines", line={"color": RING_COLOR, "width": 1, "dash": "dot"},
+                            hoverinfo="skip", showlegend=False))
+        angle = -np.pi / 4 if three_d else np.pi / 4
+        annotations.append({"x": r * np.cos(angle), "y": r * np.sin(angle), **({"z": 0} if three_d else {}),
+                            "text": f"{r:,} km", "showarrow": False, "font": {"size": 11, "color": "#6B7280"}})
+
+    fig.add_trace(landmark(0, 0, 0, "Earth", "🌍 <b>Earth</b>", "circle", EARTH_COLOR, 16, 50, 35))
 
     if not real_df.empty:
         real = real_df.dropna(subset=["x_km", "y_km", "z_km"])
         fields = _hover_fields(real)
-        fig.add_trace(trace(**xyz(real), mode="lines", name="Real path (NASA/JPL)",
+        fig.add_trace(trace(**xyz(real), mode="lines", name="Path Orion really flew (NASA/JPL)",
                             line={"color": REAL_COLOR, "width": 8 if three_d else 10}, opacity=0.45,
                             customdata=fields, hovertemplate=hover % "Real (NASA/JPL)"))
         far = real.loc[fields["dist_km"].idxmax()]
-        fig.add_trace(landmark(far["x_km"], far["y_km"], far["z_km"], "Farthest from Earth",
-                               f"<b>Farthest from Earth</b> (lunar flyby)<br>{fields.loc[far.name, 'when']} · "
-                               f"{fields.loc[far.name, 'dist_km']:,.0f} km",
-                               "diamond", REAL_COLOR, 11, 110, -10))
+        fig.add_trace(landmark(far["x_km"], far["y_km"], far["z_km"], "Farthest point",
+                               f"⭐ <b>Farthest point</b> (near the Moon)<br>{far['timestamp_utc']:%b %d} · "
+                               f"{fields.loc[far.name, 'dist_km']:,.0f} km from Earth",
+                               "diamond" if three_d else "star", REAL_COLOR, 14, 120, 10))
 
     if not syn_df.empty:
+        syn_line = _break_at_jumps(syn_df)
+        fig.add_trace(trace(**xyz(syn_line), mode="lines", name="Our simulation (digital twin)",
+                            line={"color": SYN_COLOR, "width": 3}, connectgaps=False,
+                            customdata=_hover_fields(syn_line), hovertemplate=hover % "Simulated (digital twin)"))
         fields = _hover_fields(syn_df)
-        fig.add_trace(trace(**xyz(syn_df), mode="lines", name="Simulated path (digital twin)",
-                            line={"color": SYN_COLOR, "width": 3},
-                            customdata=fields, hovertemplate=hover % "Simulated (digital twin)"))
         now = syn_df.loc[syn_df.index[-1]]
-        fig.add_trace(landmark(now["x_km"], now["y_km"], now["z_km"], "Orion now (simulated)",
-                               f"<b>Orion now</b> (simulated)<br>{fields.loc[now.name, 'when']} · "
-                               f"{fields.loc[now.name, 'dist_km']:,.0f} km from Earth",
-                               "circle", SYN_COLOR, 16, -110, -45))
+        fig.add_trace(landmark(now["x_km"], now["y_km"], now["z_km"], "Orion now",
+                               f"🚀 <b>Orion is here</b><br>{fields.loc[now.name, 'dist_km']:,.0f} km from Earth",
+                               "circle", SYN_COLOR, 18, -120, -50))
 
-    layout = {"height": 600, "margin": {"l": 60, "r": 10, "t": 10, "b": 40},
-              "legend": {"orientation": "h", "y": -0.12}}
+    layout = {"height": 620, "margin": {"l": 10, "r": 10, "t": 10, "b": 10},
+              "legend": {"orientation": "h", "y": -0.02}, "plot_bgcolor": "rgba(0,0,0,0)"}
+    hidden = {"visible": False}
     if three_d:
-        layout["scene"] = {"xaxis_title": "km", "yaxis_title": "km", "zaxis_title": "km (north)",
-                           "aspectmode": "data", "annotations": annotations,
-                           "camera": {"eye": {"x": 1.6, "y": -1.6, "z": 1.1}}}
+        layout["scene"] = {"xaxis": hidden, "yaxis": hidden, "zaxis": hidden, "aspectmode": "data",
+                           "annotations": annotations, "camera": {"eye": {"x": 1.3, "y": -1.3, "z": 1.0}}}
     else:
-        layout |= {"xaxis": {"title": "km", "zeroline": False},
-                   "yaxis": {"title": "km", "zeroline": False, "scaleanchor": "x", "scaleratio": 1},
+        layout |= {"xaxis": hidden, "yaxis": {**hidden, "scaleanchor": "x", "scaleratio": 1},
                    "annotations": [{**a, "xref": "x", "yref": "y"} for a in annotations]}
     fig.update_layout(**layout)
     return fig
@@ -211,11 +302,13 @@ def render_trajectory(date_from, date_to, limit):
     # TRAJECTORY MAP
     # =========================================================================
     if traj_view != "Hide" and (not syn_df.empty or not real_df.empty):
-        st.subheader("Where is Orion?")
+        st.subheader("Where is Orion right now?")
+        if not syn_df.empty:
+            orion_readout(syn_df)
         st.caption(
-            "Earth-centered map. **Blue band:** where Orion actually flew (NASA/JPL). "
-            "**Orange line:** where the digital twin simulates it; the closer it follows the "
-            "blue band, the better the simulation. Hover any point for time, distance and speed."
+            "🌍 Earth is in the middle, and the dotted rings show distance from Earth. "
+            "**Blue** = the path Orion really flew (NASA/JPL). **Orange** = our computer "
+            "simulation of it. 🚀 = where Orion is right now. The numbers above update every 5 seconds."
         )
         explain("trajectory.3d")
         plot(trajectory_map(real_df, syn_df, three_d=traj_view == "3D"))
