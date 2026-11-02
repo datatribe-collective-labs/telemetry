@@ -111,7 +111,18 @@ def render_overview(date_from, date_to, limit):
         with col_met:
             st.subheader("Timestamp")
             st.metric("Latest Tick", latest.timestamp_utc.strftime("%H:%M:%S UTC"))
-            st.caption(f"Date: {latest.timestamp_utc.strftime('%Y-%m-%d')}")
+            st.caption(f"Mission date: {latest.timestamp_utc.strftime('%Y-%m-%d')} (replay of the April 2026 flight)")
+
+            # Tick timestamps are mission time, so show the wall clock too, plus how long
+            # since the tick last changed (the tables have no write-time column to use).
+            now = datetime.now().astimezone()
+            last = st.session_state.get("overview_last_tick")
+            if last is None or last[0] != latest.timestamp_utc:
+                last = st.session_state["overview_last_tick"] = (latest.timestamp_utc, now)
+            idle_s = (now - last[1]).total_seconds()
+            st.caption(f"Checked at {now:%H:%M:%S} local time")
+            if idle_s > 15:
+                st.warning(f"No new ticks for {idle_s:.0f} s. Is physics_models running?")
 
 
         # =========================================================================
