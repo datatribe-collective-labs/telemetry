@@ -42,13 +42,7 @@ with st.sidebar:
         st.rerun()
 
 
-# API client
-@st.cache_resource
-def get_api_client():
-    return get_api()
-
-
-api: SyncBackendAPI = get_api_client()
+api: SyncBackendAPI = get_api()
 
 
 # Fetch latest packet for health status
