@@ -51,7 +51,10 @@ with st.sidebar:
     
     limit = st.number_input("Max Points", 10, MAX_LIMIT, 500, 50, key="traj_limit")
     show_residuals = st.checkbox("Show Residuals (Real - Synthetic)", value=True)
-    show_3d = st.checkbox("3D Trajectory", value=True)
+    traj_view = st.radio(
+        "Trajectory map", ["Top-down (2D)", "3D", "Hide"], key="traj_view",
+        help="Top-down looks down on Earth's North Pole; 3D can be rotated with the mouse.",
+    )
     
     live = live_toggle(key="traj_live")
 
@@ -70,6 +73,84 @@ def fetch_synthetic_state(date_from, date_to, limit):
 @st.cache_data(ttl=10)
 def fetch_real_orion(date_from, date_to, limit):
     return api.get_orion_ephemeris(date_from=date_from, date_to=date_to, limit=limit)
+
+
+REAL_COLOR = "#1F77B4"
+SYN_COLOR = "#FF7F0E"
+EARTH_COLOR = "#2E86DE"
+
+
+def _hover_fields(df: pd.DataFrame) -> pd.DataFrame:
+    """Time, distance from Earth and speed for each row, as plotly customdata."""
+    return pd.DataFrame({
+        "when": df["timestamp_utc"].dt.strftime("%b %d %H:%M UTC"),
+        "dist_km": np.sqrt(df["x_km"] ** 2 + df["y_km"] ** 2 + df["z_km"] ** 2),
+        "speed_kms": np.sqrt(df["vx_kms"] ** 2 + df["vy_kms"] ** 2 + df["vz_kms"] ** 2),
+    })
+
+
+def trajectory_map(real_df: pd.DataFrame, syn_df: pd.DataFrame, three_d: bool) -> go.Figure:
+    """Earth-centered map of the real and simulated paths, with labeled landmarks.
+
+    2D is the EME2000 X-Y plane, i.e. looking down on Earth's North Pole.
+    """
+    trace = go.Scatter3d if three_d else go.Scatter
+    hover = "<b>%s</b><br>%%{customdata[0]}<br>%%{customdata[1]:,.0f} km from Earth<br>%%{customdata[2]:.2f} km/s<extra></extra>"
+
+    def xyz(df):
+        return {"x": df["x_km"], "y": df["y_km"], **({"z": df["z_km"]} if three_d else {})}
+
+    # Labels are arrow annotations offset in different directions (ax/ay, in pixels), so
+    # "Earth" and "Orion now" stay readable while Orion is still close to Earth.
+    annotations = []
+
+    def landmark(x, y, z, name, text, symbol, color, size, ax, ay):
+        point = {"x": [x], "y": [y], **({"z": [z]} if three_d else {})}
+        annotations.append({"x": x, "y": y, **({"z": z} if three_d else {}), "text": text, "ax": ax, "ay": ay,
+                            "showarrow": True, "arrowhead": 0, "arrowcolor": color, "font": {"size": 12},
+                            "bgcolor": "rgba(255,255,255,0.8)"})
+        return trace(**point, mode="markers", name=name,
+                     marker={"size": size, "color": color, "symbol": symbol, "line": {"color": "white", "width": 2}},
+                     hoverinfo="text", hovertext=[text.replace("<br>", " · ")])
+
+    fig = go.Figure()
+    fig.add_trace(landmark(0, 0, 0, "Earth", "<b>Earth</b>", "circle", EARTH_COLOR, 14, 45, 30))
+
+    if not real_df.empty:
+        real = real_df.dropna(subset=["x_km", "y_km", "z_km"])
+        fields = _hover_fields(real)
+        fig.add_trace(trace(**xyz(real), mode="lines", name="Real path (NASA/JPL)",
+                            line={"color": REAL_COLOR, "width": 8 if three_d else 10}, opacity=0.45,
+                            customdata=fields, hovertemplate=hover % "Real (NASA/JPL)"))
+        far = real.loc[fields["dist_km"].idxmax()]
+        fig.add_trace(landmark(far["x_km"], far["y_km"], far["z_km"], "Farthest from Earth",
+                               f"<b>Farthest from Earth</b> (lunar flyby)<br>{fields.loc[far.name, 'when']} · "
+                               f"{fields.loc[far.name, 'dist_km']:,.0f} km",
+                               "diamond", REAL_COLOR, 11, 110, -10))
+
+    if not syn_df.empty:
+        fields = _hover_fields(syn_df)
+        fig.add_trace(trace(**xyz(syn_df), mode="lines", name="Simulated path (digital twin)",
+                            line={"color": SYN_COLOR, "width": 3},
+                            customdata=fields, hovertemplate=hover % "Simulated (digital twin)"))
+        now = syn_df.loc[syn_df.index[-1]]
+        fig.add_trace(landmark(now["x_km"], now["y_km"], now["z_km"], "Orion now (simulated)",
+                               f"<b>Orion now</b> (simulated)<br>{fields.loc[now.name, 'when']} · "
+                               f"{fields.loc[now.name, 'dist_km']:,.0f} km from Earth",
+                               "circle", SYN_COLOR, 16, -110, -45))
+
+    layout = {"height": 600, "margin": {"l": 60, "r": 10, "t": 10, "b": 40},
+              "legend": {"orientation": "h", "y": -0.12}}
+    if three_d:
+        layout["scene"] = {"xaxis_title": "km", "yaxis_title": "km", "zaxis_title": "km (north)",
+                           "aspectmode": "data", "annotations": annotations,
+                           "camera": {"eye": {"x": 1.6, "y": -1.6, "z": 1.1}}}
+    else:
+        layout |= {"xaxis": {"title": "km", "zeroline": False},
+                   "yaxis": {"title": "km", "zeroline": False, "scaleanchor": "x", "scaleratio": 1},
+                   "annotations": [{**a, "xref": "x", "yref": "y"} for a in annotations]}
+    fig.update_layout(**layout)
+    return fig
 
 
 @st.fragment(run_every=REFRESH_INTERVAL if live else None)
@@ -127,62 +208,17 @@ def render_trajectory(date_from, date_to, limit):
 
 
     # =========================================================================
-    # 3D TRAJECTORY
+    # TRAJECTORY MAP
     # =========================================================================
-    if show_3d and (not syn_df.empty or not real_df.empty):
-        st.subheader("3D Geocentric Trajectory (EME2000)")
-        explain("trajectory.3d")
-    
-        fig_3d = go.Figure()
-    
-        # Earth sphere
-        r_earth = 6371.0
-        u = np.linspace(0, 2 * np.pi, 25)
-        v = np.linspace(0, np.pi, 25)
-        x_earth = r_earth * np.outer(np.cos(u), np.sin(v))
-        y_earth = r_earth * np.outer(np.sin(u), np.sin(v))
-        z_earth = r_earth * np.outer(np.ones_like(u), np.cos(v))
-    
-        fig_3d.add_trace(go.Surface(
-            x=x_earth, y=y_earth, z=z_earth,
-            colorscale="Blues", showscale=False, opacity=0.3,
-            name="Earth (R=6371 km)"
-        ))
-    
-        # Real trajectory (JPL Horizons)
-        if not real_df.empty and all(c in real_df.columns for c in ["x_km", "y_km", "z_km"]):
-            fig_3d.add_trace(go.Scatter3d(
-                x=real_df["x_km"], y=real_df["y_km"], z=real_df["z_km"],
-                mode="lines+markers",
-                marker={"size": 3, "color": real_df.get("speed_kms", 0), "colorscale": "Viridis", "colorbar": {"title": "Speed (km/s)", "len": 0.5}},
-                line={"color": "#00D2FF", "width": 4},
-                name="JPL Horizons (Real)",
-                hovertext=real_df["timestamp_utc"].dt.strftime("%Y-%m-%d %H:%M UTC"),
-                hovertemplate="<b>Real</b><br>%{hovertext}<br>X: %{x:,.0f} km<br>Y: %{y:,.0f} km<br>Z: %{z:,.0f} km<extra></extra>",
-            ))
-    
-        # Synthetic trajectory (StateEngine)
-        if not syn_df.empty and all(c in syn_df.columns for c in ["x_km", "y_km", "z_km"]):
-            fig_3d.add_trace(go.Scatter3d(
-                x=syn_df["x_km"], y=syn_df["y_km"], z=syn_df["z_km"],
-                mode="lines+markers",
-                marker={"size": 3, "color": syn_df.get("speed_kms", syn_df.get("vx_kms", 0)**2 + syn_df.get("vy_kms", 0)**2 + syn_df.get("vz_kms", 0)**2), "colorscale": "Plasma", "showscale": False},
-                line={"color": "#FF6B6B", "width": 4, "dash": "dash"},
-                name="StateEngine (Synthetic)",
-                hovertext=syn_df["timestamp_utc"].dt.strftime("%Y-%m-%d %H:%M UTC"),
-                hovertemplate="<b>Synthetic</b><br>%{hovertext}<br>X: %{x:,.0f} km<br>Y: %{y:,.0f} km<br>Z: %{z:,.0f} km<extra></extra>",
-            ))
-    
-        fig_3d.update_layout(
-            scene={
-                "xaxis_title": "X (km)", "yaxis_title": "Y (km)", "zaxis_title": "Z (km)",
-                "aspectmode": "data",
-            },
-            height=600,
-            margin={"l": 0, "r": 0, "t": 30, "b": 0},
-            legend={"orientation": "h", "y": -0.1}
+    if traj_view != "Hide" and (not syn_df.empty or not real_df.empty):
+        st.subheader("Where is Orion?")
+        st.caption(
+            "Earth-centered map. **Blue band:** where Orion actually flew (NASA/JPL). "
+            "**Orange line:** where the digital twin simulates it; the closer it follows the "
+            "blue band, the better the simulation. Hover any point for time, distance and speed."
         )
-        plot(fig_3d)
+        explain("trajectory.3d")
+        plot(trajectory_map(real_df, syn_df, three_d=traj_view == "3D"))
 
 
     # =========================================================================

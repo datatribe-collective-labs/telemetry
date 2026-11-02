@@ -43,14 +43,17 @@ the vehicle rides to them, i.e. *margin*, which is what trend-watchers actually 
 """,
     # ---- Trajectory page ----
     "trajectory.3d": """
-**What:** 3D Earth-centered view (EME2000 frame) of two trajectories around the Earth
-sphere (blue): the real JPL Horizons/OEM arc (cyan) and the StateEngine replay (red
-dashed). Dot color encodes speed.
+**What:** Earth-centered map (EME2000 frame) of where Orion is. The wide blue band is
+the real path from NASA/JPL; the thin orange line is the digital twin's simulated path,
+ending at the big orange "Orion now" dot (the latest simulated tick). The blue diamond
+marks the farthest point from Earth in the real data, which is the lunar flyby.
 
-**How:** Orbit with the mouse. Positions come from `/telemetry/real/orion` (NASA/JPL
-ground truth, 4-min cadence) and `/telemetry/synthetic/state` (the physics replay).
-The synthetic line interpolates NASA's own planning OEM arcs, so a faithful model traces
-the cyan line almost exactly.
+**How:** "Top-down (2D)" looks down on Earth's North Pole (the X-Y plane); "3D" can be
+rotated with the mouse. Zoom with the scroll wheel or by dragging a box; double-click
+to reset. Hover any point for its time, distance from Earth and speed. Positions come
+from `/orion` (NASA/JPL ground truth) and `/telemetry/synthetic/state` (the physics
+replay). The simulated line interpolates NASA's own planning OEM arcs, so a faithful
+model stays inside the blue band.
 
 **Why:** The whole twin's premise: synthetic vs reality on one plot — divergence between
 the lines *is* model error. Watch the lunar-distance excursion grow toward flyby day.
