@@ -129,16 +129,16 @@ def orion_readout(syn_df: pd.DataFrame) -> None:
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.metric("📏 Distance from Earth", f"{dist:,.0f} km", delta=delta_text, delta_color="off")
+        st.metric("Distance from Earth", f"{dist:,.0f} km", delta=delta_text, delta_color="off")
         st.caption(f"As far as **{dist / EARTH_DIAMETER_KM:,.0f} Earths** lined up in a row")
     with c2:
-        st.metric("💨 Speed", f"{speed_kmh:,.0f} km/h")
+        st.metric("Speed", f"{speed_kmh:,.0f} km/h")
         st.caption(f"About **{speed_kmh / JET_SPEED_KMH:,.1f}×** as fast as a passenger jet")
     with c3:
-        st.metric("🧭 Direction", "Heading away 🚀" if heading_away else "Coming home 🏠")
+        st.metric("Direction", "Heading away" if heading_away else "Coming home")
         st.caption("Away from Earth or back toward it")
     with c4:
-        st.metric("🛰️ Moved since you opened this page", f"{moved:,.0f} km")
+        st.metric("Moved since you opened this page", f"{moved:,.0f} km")
         st.caption(f"Mission day **{(tick - LIFTOFF).days + 1}** · {tick:%b %d %H:%M:%S} UTC")
 
 
@@ -206,7 +206,7 @@ def trajectory_map(real_df: pd.DataFrame, syn_df: pd.DataFrame, three_d: bool) -
         annotations.append({"x": r * np.cos(angle), "y": r * np.sin(angle), **({"z": 0} if three_d else {}),
                             "text": f"{r:,} km", "showarrow": False, "font": {"size": 11, "color": "#6B7280"}})
 
-    fig.add_trace(landmark(0, 0, 0, "Earth", "🌍 <b>Earth</b>", "circle", EARTH_COLOR, 16, 50, 35))
+    fig.add_trace(landmark(0, 0, 0, "Earth", "<b>Earth</b>", "circle", EARTH_COLOR, 16, 50, 35))
 
     if not real_df.empty:
         real = real_df.dropna(subset=["x_km", "y_km", "z_km"])
@@ -216,7 +216,7 @@ def trajectory_map(real_df: pd.DataFrame, syn_df: pd.DataFrame, three_d: bool) -
                             customdata=fields, hovertemplate=hover % "Real (NASA/JPL)"))
         far = real.loc[fields["dist_km"].idxmax()]
         fig.add_trace(landmark(far["x_km"], far["y_km"], far["z_km"], "Farthest point",
-                               f"⭐ <b>Farthest point</b> (near the Moon)<br>{far['timestamp_utc']:%b %d} · "
+                               f"<b>Farthest point</b> (near the Moon)<br>{far['timestamp_utc']:%b %d} · "
                                f"{fields.loc[far.name, 'dist_km']:,.0f} km from Earth",
                                "diamond" if three_d else "star", REAL_COLOR, 14, 120, 10))
 
@@ -228,7 +228,7 @@ def trajectory_map(real_df: pd.DataFrame, syn_df: pd.DataFrame, three_d: bool) -
         fields = _hover_fields(syn_df)
         now = syn_df.loc[syn_df.index[-1]]
         fig.add_trace(landmark(now["x_km"], now["y_km"], now["z_km"], "Orion now",
-                               f"🚀 <b>Orion is here</b><br>{fields.loc[now.name, 'dist_km']:,.0f} km from Earth",
+                               f"<b>Orion is here</b><br>{fields.loc[now.name, 'dist_km']:,.0f} km from Earth",
                                "circle", SYN_COLOR, 18, -120, -50))
 
     layout = {"height": 620, "margin": {"l": 10, "r": 10, "t": 10, "b": 10},
@@ -306,9 +306,9 @@ def render_trajectory(date_from, date_to, limit):
         if not syn_df.empty:
             orion_readout(syn_df)
         st.caption(
-            "🌍 Earth is in the middle, and the dotted rings show distance from Earth. "
+            "Earth is in the middle, and the dotted rings show distance from Earth. "
             "**Blue** = the path Orion really flew (NASA/JPL). **Orange** = our computer "
-            "simulation of it. 🚀 = where Orion is right now. The numbers above update every 5 seconds."
+            "simulation of it. The orange dot is where Orion is right now. The numbers above update every 5 seconds."
         )
         explain("trajectory.3d")
         plot(trajectory_map(real_df, syn_df, three_d=traj_view == "3D"))
