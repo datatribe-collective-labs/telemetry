@@ -6,7 +6,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from dashboard.src.prototype.data.backend_api import SyncBackendAPI, get_api
+from dashboard.src.prototype.data.backend_api import MAX_LIMIT, SyncBackendAPI, get_api
 from dashboard.src.prototype.pages._explain import explain
 
 st.title("Artemis II Digital Twin — Overview")
@@ -35,7 +35,7 @@ with st.sidebar:
         date_from = default_start
         date_to = default_end
     
-    limit = st.number_input("Max Points", min_value=10, max_value=5000, value=500, step=50)
+    limit = st.number_input("Max Points", min_value=10, max_value=MAX_LIMIT, value=500, step=50)
     auto_refresh = st.checkbox("Auto-refresh (10s)", value=False)
     
     if st.button("Refresh Now"):

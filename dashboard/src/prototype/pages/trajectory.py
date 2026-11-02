@@ -8,7 +8,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from dashboard.src.prototype.data.backend_api import SyncBackendAPI, get_api
+from dashboard.src.prototype.data.backend_api import MAX_LIMIT, SyncBackendAPI, get_api
 from dashboard.src.prototype.pages._explain import explain
 
 st.title("Trajectory — Real vs Synthetic")
@@ -38,7 +38,7 @@ with st.sidebar:
         date_from = default_start
         date_to = default_end
     
-    limit = st.number_input("Max Points", 10, 5000, 500, 50, key="traj_limit")
+    limit = st.number_input("Max Points", 10, MAX_LIMIT, 500, 50, key="traj_limit")
     show_residuals = st.checkbox("Show Residuals (Real - Synthetic)", value=True)
     show_3d = st.checkbox("3D Trajectory", value=True)
     
