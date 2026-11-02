@@ -78,13 +78,16 @@ def render_trajectory(date_from, date_to, limit):
     try:
         syn_resp = fetch_synthetic_state(date_from, date_to, limit)
         syn_items = syn_resp.items if syn_resp else []
-        # Synthetic rows are the newest `limit` ticks; fetch real Horizons rows over that
-        # same span so the nearest-timestamp merge below has rows to pair up.
-        real_from, real_to = date_from, date_to
+        # Real Horizons track for the whole sidebar window (drawn on the charts).
+        real_resp = fetch_real_orion(date_from, date_to, limit)
+        # Synthetic rows are the newest `limit` ticks, which the window fetch above can miss
+        # once the real table outgrows `limit`; fetch real rows over the synthetic span too
+        # so the nearest-timestamp merge below has rows to pair up.
+        span_items = []
         if syn_items:
             syn_times = [s.timestamp_utc for s in syn_items]
-            real_from, real_to = min(syn_times), max(syn_times)
-        real_resp = fetch_real_orion(real_from, real_to, limit)
+            span_resp = fetch_real_orion(min(syn_times), max(syn_times), limit)
+            span_items = span_resp.items if span_resp else []
     except BackendAPIError as e:
         st.error(str(e))
         return
@@ -93,7 +96,7 @@ def render_trajectory(date_from, date_to, limit):
     if real_resp and real_resp.total > len(real_items):
         st.caption(
             f"Showing the first {len(real_items)} of {real_resp.total} JPL Horizons rows in the "
-            "synthetic data's time span; raise Max Points to see more."
+            "selected window; raise Max Points to see more."
         )
 
     if not syn_items and not real_items:
@@ -104,16 +107,23 @@ def render_trajectory(date_from, date_to, limit):
     # Convert to DataFrames
     syn_df = pd.DataFrame([s.model_dump() for s in syn_items]) if syn_items else pd.DataFrame()
     real_df = pd.DataFrame([r.model_dump() for r in real_items]) if real_items else pd.DataFrame()
+    span_df = pd.DataFrame([r.model_dump() for r in span_items]) if span_items else pd.DataFrame()
 
     # Real (JPL Horizons/orion_ephemeris) rows are keyed by `epoch`; synthetic rows by
     # `timestamp_utc`. Normalize real onto the shared timestamp column used below.
     if not real_df.empty and "epoch" in real_df.columns and "timestamp_utc" not in real_df.columns:
         real_df = real_df.rename(columns={"epoch": "timestamp_utc"})
+    if not span_df.empty and "epoch" in span_df.columns and "timestamp_utc" not in span_df.columns:
+        span_df = span_df.rename(columns={"epoch": "timestamp_utc"})
 
-    for df in [syn_df, real_df]:
+    for df in [syn_df, real_df, span_df]:
         if not df.empty and "timestamp_utc" in df.columns:
             df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True)
             df.sort_values("timestamp_utc", inplace=True)
+
+    # The comparison pairs synthetic with real over the synthetic span when they overlap;
+    # otherwise it falls back to the window track (and explains the missing overlap below).
+    cmp_real_df = span_df if not span_df.empty else real_df
 
 
     # =========================================================================
@@ -185,7 +195,7 @@ def render_trajectory(date_from, date_to, limit):
     if not syn_df.empty and not real_df.empty:
         # Merge on nearest timestamp for residuals
         merged = pd.merge_asof(
-            real_df.sort_values("timestamp_utc"),
+            cmp_real_df.sort_values("timestamp_utc"),
             syn_df.sort_values("timestamp_utc"),
             on="timestamp_utc",
             direction="nearest",
