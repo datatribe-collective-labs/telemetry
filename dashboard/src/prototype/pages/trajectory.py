@@ -77,13 +77,24 @@ def render_trajectory(date_from, date_to, limit):
     # Fetch data
     try:
         syn_resp = fetch_synthetic_state(date_from, date_to, limit)
-        real_resp = fetch_real_orion(date_from, date_to, limit)
+        syn_items = syn_resp.items if syn_resp else []
+        # Synthetic rows are the newest `limit` ticks; fetch real Horizons rows over that
+        # same span so the nearest-timestamp merge below has rows to pair up.
+        real_from, real_to = date_from, date_to
+        if syn_items:
+            syn_times = [s.timestamp_utc for s in syn_items]
+            real_from, real_to = min(syn_times), max(syn_times)
+        real_resp = fetch_real_orion(real_from, real_to, limit)
     except BackendAPIError as e:
         st.error(str(e))
         return
 
-    syn_items = syn_resp.items if syn_resp else []
     real_items = real_resp.items if real_resp else []
+    if real_resp and real_resp.total > len(real_items):
+        st.caption(
+            f"Showing the first {len(real_items)} of {real_resp.total} JPL Horizons rows in the "
+            "synthetic data's time span; raise Max Points to see more."
+        )
 
     if not syn_items and not real_items:
         st.warning("No data available for selected range.")
