@@ -32,7 +32,15 @@ compatibility.
 All under the `/telemetry/synthetic` prefix (kept separate from real JPL/NASA
 data endpoints, which have no prefix). All list endpoints support
 pagination (`limit`, `offset`) and ISO `date_from`/`date_to` filters, and
-return `{items, total, limit, offset}`.
+return `{items, total, limit, offset}`. They also accept `order=asc|desc`
+(default `asc`) and `sort_by=timestamp_utc|ingested_at` (default
+`timestamp_utc`, i.e. simulation time). `ingested_at` is when the consumer last
+wrote the row: a DB-only column, not in the ODCS contracts and not returned.
+A live view wants `sort_by=ingested_at&order=desc` (the Digital Twin dashboard's
+default): when the producer restarts at an earlier MET, sim-time ordering keeps
+returning the previous run's later rows as "newest". Ties (e.g. rows that
+predate the column) are broken on `timestamp_utc`. `/latest` always returns
+the most recently written packet.
 
 | Endpoint | Extra filters |
 |----------|---------------|

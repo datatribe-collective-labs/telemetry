@@ -16,6 +16,9 @@ PAIRS=[
  ('ml_feature_vectors','ML_FEATURE_COLUMNS','SyntheticMLFeatureVector'),
 ]
 
+# DB-only metadata the API sorts by but never returns (not part of the ODCS contracts).
+DB_ONLY_COLUMNS={'ingested_at'}
+
 def test_column_lists_match_db_and_contracts():
     for table_name, constant_name, model_name in PAIRS:
         cols=getattr(synthetic, constant_name)
@@ -25,7 +28,7 @@ def test_column_lists_match_db_and_contracts():
                 db_names.append(c.split('::',1)[0])
             else:
                 db_names.append(c.lower())
-        assert db_names == [c.name for c in Base.metadata.tables[table_name].columns]
+        assert db_names == [c.name for c in Base.metadata.tables[table_name].columns if c.name not in DB_ONLY_COLUMNS]
         output_names=[]
         for c in cols:
             if ' AS ' in c:
@@ -33,3 +36,8 @@ def test_column_lists_match_db_and_contracts():
             else:
                 output_names.append(c)
         assert output_names == list(getattr(contracts, model_name).model_fields)
+
+
+def test_column_lists_every_synthetic_table_has_ingested_at():
+    for table_name, _, _ in PAIRS:
+        assert 'ingested_at' in Base.metadata.tables[table_name].columns

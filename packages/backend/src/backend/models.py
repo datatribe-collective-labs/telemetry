@@ -20,6 +20,7 @@ from sqlalchemy import (
     Text,
     Uuid,
     desc,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -29,7 +30,17 @@ class Base(DeclarativeBase):
     """Base class for all application database models."""
 
 
-class StateSnapshot(Base):
+class IngestedAtMixin:
+    """Write time of a synthetic row: DB default on insert, refreshed by the consumer
+    on every upsert. DB-only metadata (not in the ODCS contracts); the API sorts by it
+    so "newest" means most recently written, not latest simulation time."""
+
+    ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class StateSnapshot(IngestedAtMixin, Base):
     """State engine snapshot - authoritative per-tick spacecraft state."""
 
     __tablename__ = "state_snapshot"
@@ -61,7 +72,7 @@ class StateSnapshot(Base):
     )
 
 
-class ThermalOutput(Base):
+class ThermalOutput(IngestedAtMixin, Base):
     """Thermal model output - three-node lumped parameter model."""
 
     __tablename__ = "thermal_output"
@@ -84,7 +95,7 @@ class ThermalOutput(Base):
     )
 
 
-class PowerOutput(Base):
+class PowerOutput(IngestedAtMixin, Base):
     """Power model output - electrical power system."""
 
     __tablename__ = "power_output"
@@ -108,7 +119,7 @@ class PowerOutput(Base):
     )
 
 
-class CommsOutput(Base):
+class CommsOutput(IngestedAtMixin, Base):
     """Comms model output - S-band link budget."""
 
     __tablename__ = "comms_output"
@@ -130,7 +141,7 @@ class CommsOutput(Base):
     )
 
 
-class RadiationOutput(Base):
+class RadiationOutput(IngestedAtMixin, Base):
     """Radiation model output - dose accumulation and degradation."""
 
     __tablename__ = "radiation_output"
@@ -152,7 +163,7 @@ class RadiationOutput(Base):
     )
 
 
-class CrossModelState(Base):
+class CrossModelState(IngestedAtMixin, Base):
     """Cross-model coupling state - internal pipeline bus."""
 
     __tablename__ = "cross_model_state"
@@ -169,7 +180,7 @@ class CrossModelState(Base):
     plasma_noise_factor: Mapped[float] = mapped_column(Double, nullable=False)
 
 
-class TelemetryPacket(Base):
+class TelemetryPacket(IngestedAtMixin, Base):
     """Synthesized telemetry packet - primary consumer-facing output."""
 
     __tablename__ = "telemetry_packet"
@@ -216,7 +227,7 @@ class TelemetryPacket(Base):
     )
 
 
-class AnomalyEvent(Base):
+class AnomalyEvent(IngestedAtMixin, Base):
     """Anomaly event from two-layer detection system."""
 
     __tablename__ = "anomaly_events"
@@ -249,7 +260,7 @@ class AnomalyEvent(Base):
     )
 
 
-class MLFeatureVector(Base):
+class MLFeatureVector(IngestedAtMixin, Base):
     """ML feature vector for anomaly detection."""
 
     __tablename__ = "ml_feature_vectors"
@@ -283,6 +294,11 @@ class MLFeatureVector(Base):
     soc_rate_pct_hr: Mapped[float] = mapped_column(Double, nullable=False)
     dose_rate_delta_mrad_hr: Mapped[float] = mapped_column(Double, nullable=False)
     signal_quality_delta: Mapped[float] = mapped_column(Double, nullable=False)
+
+
+# One write-time index per synthetic table, for ORDER BY ingested_at DESC LIMIT n.
+for _model in (StateSnapshot, ThermalOutput, PowerOutput, CommsOutput, RadiationOutput, CrossModelState, TelemetryPacket, AnomalyEvent, MLFeatureVector):
+    Index(f"idx_{_model.__tablename__}_ingested_at", desc(_model.ingested_at))
 
 
 # ---- Real-data tables (JPL/NASA managed, NOT TimescaleDB hypertables) ----

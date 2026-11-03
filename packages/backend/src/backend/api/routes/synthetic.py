@@ -12,7 +12,7 @@ field names in the SELECT clause using `lower_col AS "ContractName"`.
 """
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from contracts import (
     SyntheticAnomalyEvent,
@@ -41,6 +41,16 @@ from sqlalchemy.orm import Session
 from backend.db import get_db
 
 router = APIRouter(prefix="/telemetry/synthetic", tags=["synthetic-telemetry"])
+
+# Sort key for the list endpoints. `timestamp_utc` is simulation time; `ingested_at`
+# is when the consumer last wrote the row (DB-only, not part of the ODCS contracts).
+# Simulation time can jump backwards when the producer restarts at an earlier MET,
+# so "most recently written" is the only reliable meaning of "newest" for live views.
+SortBy = Literal["timestamp_utc", "ingested_at"]
+SORT_BY_DESCRIPTION = (
+    "Sort key: timestamp_utc (simulation time) or ingested_at (time the row was "
+    "written; use with order=desc for the live tail of the current run)"
+)
 
 
 # =============================================================================
@@ -85,17 +95,23 @@ def _execute_query(
     limit: int,
     offset: int,
     order_by: str = "timestamp_utc",
+    descending: bool = False,
 ) -> list:
     """Execute a SELECT query with pagination."""
     # Verify order_by is lowercase
     _verify_lowercase([order_by], "order_by")
-    
+
     columns_str = _select_columns(contract_columns)
+    direction = "DESC" if descending else "ASC"
+    # Rows written in one batch (e.g. every pre-migration row) share an ingested_at,
+    # so tie-break on simulation time to keep paging deterministic.
+    order_cols = [order_by] if order_by == "timestamp_utc" else [order_by, "timestamp_utc"]
+    order_sql = ", ".join(f"{c} {direction}" for c in order_cols)
     query = f"""
         SELECT {columns_str}
         FROM {table}
         {where_clause}
-        ORDER BY {order_by}
+        ORDER BY {order_sql}
         LIMIT :limit OFFSET :offset
     """
     params["limit"] = limit
@@ -132,6 +148,10 @@ async def list_synthetic_state(
     date_to: datetime | None = Query(None, description="End date (UTC)"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    order: Literal["asc", "desc"] = Query(
+        "asc", description="Sort direction: asc (oldest first) or desc (newest first)"
+    ),
+    sort_by: SortBy = Query("timestamp_utc", description=SORT_BY_DESCRIPTION),
 ) -> SyntheticStateResponse:
     """List synthetic state snapshots from the state engine.
     
@@ -150,7 +170,7 @@ async def list_synthetic_state(
 
     where_clause = _build_where_clause(conditions)
     total = _count_query(db, "state_snapshot", where_clause, params)
-    items = _execute_query(db, "state_snapshot", STATE_COLUMNS, where_clause, params, limit, offset)
+    items = _execute_query(db, "state_snapshot", STATE_COLUMNS, where_clause, params, limit, offset, order_by=sort_by, descending=order == "desc")
 
     return SyntheticStateResponse(
         items=[SyntheticStateSnapshot.model_validate(item) for item in items],
@@ -196,6 +216,10 @@ async def list_synthetic_thermal(
     thermal_state: str | None = Query(None, description="Filter by thermal state"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    order: Literal["asc", "desc"] = Query(
+        "asc", description="Sort direction: asc (oldest first) or desc (newest first)"
+    ),
+    sort_by: SortBy = Query("timestamp_utc", description=SORT_BY_DESCRIPTION),
 ) -> SyntheticThermalResponse:
     """List thermal model outputs.
     
@@ -216,7 +240,7 @@ async def list_synthetic_thermal(
 
     where_clause = _build_where_clause(conditions)
     total = _count_query(db, "thermal_output", where_clause, params)
-    items = _execute_query(db, "thermal_output", THERMAL_COLUMNS, where_clause, params, limit, offset)
+    items = _execute_query(db, "thermal_output", THERMAL_COLUMNS, where_clause, params, limit, offset, order_by=sort_by, descending=order == "desc")
 
     return SyntheticThermalResponse(
         items=[SyntheticThermalOutput.model_validate(item) for item in items],
@@ -247,6 +271,10 @@ async def list_synthetic_power(
     power_state: str | None = Query(None, description="Filter by power state"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    order: Literal["asc", "desc"] = Query(
+        "asc", description="Sort direction: asc (oldest first) or desc (newest first)"
+    ),
+    sort_by: SortBy = Query("timestamp_utc", description=SORT_BY_DESCRIPTION),
 ) -> SyntheticPowerResponse:
     """List power model outputs.
     
@@ -267,7 +295,7 @@ async def list_synthetic_power(
 
     where_clause = _build_where_clause(conditions)
     total = _count_query(db, "power_output", where_clause, params)
-    items = _execute_query(db, "power_output", POWER_COLUMNS, where_clause, params, limit, offset)
+    items = _execute_query(db, "power_output", POWER_COLUMNS, where_clause, params, limit, offset, order_by=sort_by, descending=order == "desc")
 
     return SyntheticPowerResponse(
         items=[SyntheticPowerOutput.model_validate(item) for item in items],
@@ -297,6 +325,10 @@ async def list_synthetic_comms(
     comm_state: str | None = Query(None, description="Filter by comm state"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    order: Literal["asc", "desc"] = Query(
+        "asc", description="Sort direction: asc (oldest first) or desc (newest first)"
+    ),
+    sort_by: SortBy = Query("timestamp_utc", description=SORT_BY_DESCRIPTION),
 ) -> SyntheticCommsResponse:
     """List communications model outputs.
     
@@ -317,7 +349,7 @@ async def list_synthetic_comms(
 
     where_clause = _build_where_clause(conditions)
     total = _count_query(db, "comms_output", where_clause, params)
-    items = _execute_query(db, "comms_output", COMMS_COLUMNS, where_clause, params, limit, offset)
+    items = _execute_query(db, "comms_output", COMMS_COLUMNS, where_clause, params, limit, offset, order_by=sort_by, descending=order == "desc")
 
     return SyntheticCommsResponse(
         items=[SyntheticCommsOutput.model_validate(item) for item in items],
@@ -348,6 +380,10 @@ async def list_synthetic_radiation(
     sep_event_active: bool | None = Query(None, description="Filter by SEP event"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    order: Literal["asc", "desc"] = Query(
+        "asc", description="Sort direction: asc (oldest first) or desc (newest first)"
+    ),
+    sort_by: SortBy = Query("timestamp_utc", description=SORT_BY_DESCRIPTION),
 ) -> SyntheticRadiationResponse:
     """List radiation model outputs.
     
@@ -368,7 +404,7 @@ async def list_synthetic_radiation(
 
     where_clause = _build_where_clause(conditions)
     total = _count_query(db, "radiation_output", where_clause, params)
-    items = _execute_query(db, "radiation_output", RADIATION_COLUMNS, where_clause, params, limit, offset)
+    items = _execute_query(db, "radiation_output", RADIATION_COLUMNS, where_clause, params, limit, offset, order_by=sort_by, descending=order == "desc")
 
     return SyntheticRadiationResponse(
         items=[SyntheticRadiationOutput.model_validate(item) for item in items],
@@ -398,6 +434,10 @@ async def list_synthetic_cross_model(
     date_to: datetime | None = Query(None, description="End date (UTC)"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    order: Literal["asc", "desc"] = Query(
+        "asc", description="Sort direction: asc (oldest first) or desc (newest first)"
+    ),
+    sort_by: SortBy = Query("timestamp_utc", description=SORT_BY_DESCRIPTION),
 ) -> SyntheticCrossModelResponse:
     """List cross-model coupling state.
     
@@ -415,7 +455,7 @@ async def list_synthetic_cross_model(
 
     where_clause = _build_where_clause(conditions)
     total = _count_query(db, "cross_model_state", where_clause, params)
-    items = _execute_query(db, "cross_model_state", CROSS_MODEL_COLUMNS, where_clause, params, limit, offset)
+    items = _execute_query(db, "cross_model_state", CROSS_MODEL_COLUMNS, where_clause, params, limit, offset, order_by=sort_by, descending=order == "desc")
 
     return SyntheticCrossModelResponse(
         items=[SyntheticCrossModelState.model_validate(item) for item in items],
@@ -451,6 +491,10 @@ async def list_synthetic_telemetry_packets(
     comm_state: str | None = Query(None, description="Filter by comm state"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    order: Literal["asc", "desc"] = Query(
+        "asc", description="Sort direction: asc (oldest first) or desc (newest first)"
+    ),
+    sort_by: SortBy = Query("timestamp_utc", description=SORT_BY_DESCRIPTION),
 ) -> SyntheticTelemetryPacketResponse:
     """List synthesized telemetry packets.
     
@@ -481,7 +525,7 @@ async def list_synthetic_telemetry_packets(
 
     where_clause = _build_where_clause(conditions)
     total = _count_query(db, "telemetry_packet", where_clause, params)
-    items = _execute_query(db, "telemetry_packet", TELEMETRY_COLUMNS, where_clause, params, limit, offset)
+    items = _execute_query(db, "telemetry_packet", TELEMETRY_COLUMNS, where_clause, params, limit, offset, order_by=sort_by, descending=order == "desc")
 
     return SyntheticTelemetryPacketResponse(
         items=[SyntheticTelemetryPacket.model_validate(item) for item in items],
@@ -533,6 +577,10 @@ async def list_synthetic_anomalies(
     mission_phase: str | None = Query(None, description="Filter by mission phase"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    order: Literal["asc", "desc"] = Query(
+        "asc", description="Sort direction: asc (oldest first) or desc (newest first)"
+    ),
+    sort_by: SortBy = Query("timestamp_utc", description=SORT_BY_DESCRIPTION),
 ) -> SyntheticAnomalyResponse:
     """List anomaly events from the two-layer detection system.
     
@@ -564,7 +612,7 @@ async def list_synthetic_anomalies(
 
     where_clause = _build_where_clause(conditions)
     total = _count_query(db, "anomaly_events", where_clause, params)
-    items = _execute_query(db, "anomaly_events", ANOMALY_COLUMNS, where_clause, params, limit, offset)
+    items = _execute_query(db, "anomaly_events", ANOMALY_COLUMNS, where_clause, params, limit, offset, order_by=sort_by, descending=order == "desc")
 
     return SyntheticAnomalyResponse(
         items=[SyntheticAnomalyEvent.model_validate(item) for item in items],
@@ -598,6 +646,10 @@ async def list_synthetic_ml_features(
     date_to: datetime | None = Query(None, description="End date (UTC)"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum results"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
+    order: Literal["asc", "desc"] = Query(
+        "asc", description="Sort direction: asc (oldest first) or desc (newest first)"
+    ),
+    sort_by: SortBy = Query("timestamp_utc", description=SORT_BY_DESCRIPTION),
 ) -> SyntheticMLFeaturesResponse:
     """List ML feature vectors for anomaly detection.
     
@@ -616,7 +668,7 @@ async def list_synthetic_ml_features(
 
     where_clause = _build_where_clause(conditions)
     total = _count_query(db, "ml_feature_vectors", where_clause, params)
-    items = _execute_query(db, "ml_feature_vectors", ML_FEATURE_COLUMNS, where_clause, params, limit, offset)
+    items = _execute_query(db, "ml_feature_vectors", ML_FEATURE_COLUMNS, where_clause, params, limit, offset, order_by=sort_by, descending=order == "desc")
 
     return SyntheticMLFeaturesResponse(
         items=[SyntheticMLFeatureVector.model_validate(item) for item in items],
@@ -634,9 +686,16 @@ async def list_synthetic_ml_features(
 async def get_latest_synthetic_telemetry(
     db: Annotated[Session, Depends(get_db)],
 ) -> SyntheticTelemetryPacket | None:
-    """Get the most recent synthetic telemetry packet."""
+    """Get the most recently written synthetic telemetry packet.
+
+    Ordered by write time, not simulation time: after the producer restarts at an
+    earlier MET, a previous run's later timestamps would otherwise stay "latest".
+    """
     columns_str = _select_columns(TELEMETRY_COLUMNS)
-    query = f"SELECT {columns_str} FROM telemetry_packet ORDER BY timestamp_utc DESC LIMIT 1"
+    query = (
+        f"SELECT {columns_str} FROM telemetry_packet "
+        "ORDER BY ingested_at DESC, timestamp_utc DESC LIMIT 1"
+    )
     result = db.execute(text(query))
     row = result.first()
     if not row:

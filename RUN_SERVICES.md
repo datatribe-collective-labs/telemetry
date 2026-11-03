@@ -147,6 +147,23 @@ docker compose up -d --force-recreate physics_models
 Thermal/power dynamics scale with sim time (heater cycles, SOC curves stay physically
 meaningful); dashboards just plot the sim timestamps — nothing to change there.
 
+**Seeking backwards is safe.** Synthetic tables are keyed on the sim `timestamp_utc`,
+but each row also records when it was written (`ingested_at`, refreshed on every
+upsert), and the Digital Twin dashboard shows the most recently *written* rows. A
+restart at an earlier MET than a previous run reached therefore shows up live right
+away; the live pages also hide that previous run's leftover later rows. This needs the
+`d5159fa9708e` migration (step 2) applied before the consumer starts. To clear old runs
+anyway (e.g. to free space), truncate the synthetic tables:
+
+```bash
+docker compose exec timescaledb psql -U telemetry -d telemetry -c "TRUNCATE state_snapshot, thermal_output, power_output, comms_output, radiation_output, cross_model_state, telemetry_packet, anomaly_events, ml_feature_vectors;"
+```
+
+**The first ~3 h 23 min after liftoff are static.** The NASA OEM arc starts at
+Apr 2 01:57:37 UTC (MET 12,157 s); before that the state engine clamps to the arc's
+first point, so position and distance from Earth do not change. Start at
+`PHYSICS_MODELS_START_MET_SECONDS=12300` or later to see Orion move immediately.
+
 Reference METs (official timeline): ICPS Sep 0/03:24 (12,240 s) · TLI ~1/01:37 (92,220 s) ·
 Lunar SOI entry 4/06:59 · close approach 5/01:23:20 (433,400 s) · splashdown 9/01:46.
 

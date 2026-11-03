@@ -40,6 +40,21 @@ def test_execute_query():
     assert params["x"]==1 and params["limit"]==10 and params["offset"]==20
     with pytest.raises(ValueError): _execute_query(db,"t",["x"],"",{},1,0,order_by="timestamp_UTC")
 
+def test_execute_query_orders_asc_by_default():
+    db=DB([Result()])
+    _execute_query(db,"t",["x"],"",{},1,0)
+    assert "ORDER BY timestamp_utc ASC" in db.calls[0][0]
+
+def test_execute_query_orders_desc_when_requested():
+    db=DB([Result()])
+    _execute_query(db,"t",["x"],"",{},1,0,descending=True)
+    assert "ORDER BY timestamp_utc DESC" in db.calls[0][0]
+
+def test_execute_query_tie_breaks_on_timestamp_when_sorting_by_ingested_at():
+    db=DB([Result()])
+    _execute_query(db,"t",["x"],"",{},1,0,order_by="ingested_at",descending=True)
+    assert "ORDER BY ingested_at DESC, timestamp_utc DESC" in db.calls[0][0]
+
 def test_count_query():
     db=DB([Result(scalar_value=None)])
     assert _count_query(db,"t","",{})==0
