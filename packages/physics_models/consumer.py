@@ -1,4 +1,9 @@
-"""Kafka consumer for physics models — writes synthetic telemetry to TimescaleDB."""
+"""Kafka consumer for physics models — writes synthetic telemetry to TimescaleDB.
+
+Every upsert refreshes ``ingested_at`` (write time; inserts get the column default),
+so re-written rows rank as newest even when the producer restarts at an earlier
+simulation time. Needs the backend's ``d5159fa9708e`` migration applied first.
+"""
 
 import json
 import os
@@ -92,6 +97,7 @@ class TelemetryConsumer:
                 :roll_deg, :pitch_deg, :yaw_deg
             )
             ON CONFLICT (timestamp_utc) DO UPDATE SET
+                ingested_at = now(),
                 x_km = EXCLUDED.x_km, y_km = EXCLUDED.y_km, z_km = EXCLUDED.z_km,
                 vx_kms = EXCLUDED.vx_kms, vy_kms = EXCLUDED.vy_kms, vz_kms = EXCLUDED.vz_kms,
                 distance_from_sun_au = EXCLUDED.distance_from_sun_au,
@@ -118,6 +124,7 @@ class TelemetryConsumer:
                 :q_internal_w, :heater_active, :heater_power_w, :thermal_state
             )
             ON CONFLICT (timestamp_utc) DO UPDATE SET
+                ingested_at = now(),
                 temp_sun_face_k = EXCLUDED.temp_sun_face_k,
                 temp_shadow_face_k = EXCLUDED.temp_shadow_face_k,
                 temp_electronics_bay_k = EXCLUDED.temp_electronics_bay_k,
@@ -141,6 +148,7 @@ class TelemetryConsumer:
                 :battery_current_a, :net_power_w, :available_power_w, :power_state
             )
             ON CONFLICT (timestamp_utc) DO UPDATE SET
+                ingested_at = now(),
                 solar_array_power_w = EXCLUDED.solar_array_power_w,
                 array_efficiency = EXCLUDED.array_efficiency,
                 total_load_w = EXCLUDED.total_load_w,
@@ -164,6 +172,7 @@ class TelemetryConsumer:
                 :data_rate_kbps, :signal_quality, :comm_state
             )
             ON CONFLICT (timestamp_utc) DO UPDATE SET
+                ingested_at = now(),
                 eirp_dbw = EXCLUDED.eirp_dbw,
                 free_space_path_loss_db = EXCLUDED.free_space_path_loss_db,
                 received_power_dbw = EXCLUDED.received_power_dbw,
@@ -188,6 +197,7 @@ class TelemetryConsumer:
                 :sep_event_active
             )
             ON CONFLICT (timestamp_utc) DO UPDATE SET
+                ingested_at = now(),
                 total_dose_rate_rad_s = EXCLUDED.total_dose_rate_rad_s,
                 cumulative_dose_krad = EXCLUDED.cumulative_dose_krad,
                 solar_array_degradation = EXCLUDED.solar_array_degradation,
@@ -217,6 +227,7 @@ class TelemetryConsumer:
                 :all_nominal
             )
             ON CONFLICT (timestamp_utc) DO UPDATE SET
+                ingested_at = now(),
                 spacecraft_id = EXCLUDED.spacecraft_id,
                 temp_sun_face_k = EXCLUDED.temp_sun_face_k,
                 temp_shadow_face_k = EXCLUDED.temp_shadow_face_k,
@@ -251,6 +262,7 @@ class TelemetryConsumer:
                 :plasma_noise_factor
             )
             ON CONFLICT (timestamp_utc) DO UPDATE SET
+                ingested_at = now(),
                 electronics_bay_temp_k = EXCLUDED.electronics_bay_temp_k,
                 power_dissipation_w = EXCLUDED.power_dissipation_w,
                 available_power_w = EXCLUDED.available_power_w,
@@ -272,6 +284,7 @@ class TelemetryConsumer:
                 :raw_features_json, :detection_layer
             )
             ON CONFLICT (event_id) DO UPDATE SET
+                ingested_at = now(),
                 timestamp_utc = EXCLUDED.timestamp_utc,
                 anomaly_type = EXCLUDED.anomaly_type,
                 severity = EXCLUDED.severity,
@@ -306,6 +319,7 @@ class TelemetryConsumer:
                 :dose_rate_delta_mrad_hr, :signal_quality_delta
             )
             ON CONFLICT (timestamp_utc) DO UPDATE SET
+                ingested_at = now(),
                 temp_elec_norm = EXCLUDED.temp_elec_norm,
                 temp_sun_norm = EXCLUDED.temp_sun_norm,
                 temp_shadow_norm = EXCLUDED.temp_shadow_norm,

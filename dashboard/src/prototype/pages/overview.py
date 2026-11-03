@@ -16,6 +16,7 @@ from dashboard.src.prototype.pages._explain import explain
 from dashboard.src.prototype.pages._live import (
     CACHE_TTL_S,
     REFRESH_INTERVAL,
+    current_run,
     live_toggle,
     plot,
 )
@@ -186,8 +187,9 @@ def render_overview(date_from, date_to, limit):
             st.error(str(e))
             return
     
-        if history.items:
-            df = pd.DataFrame([p.model_dump() for p in history.items])
+        packets = current_run(history.items)
+        if packets:
+            df = pd.DataFrame([p.model_dump() for p in packets])
             df = df.sort_values("timestamp_utc")
         
             # Convert to Celsius for display

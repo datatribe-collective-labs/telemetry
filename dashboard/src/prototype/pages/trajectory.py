@@ -18,6 +18,7 @@ from dashboard.src.prototype.pages._explain import explain
 from dashboard.src.prototype.pages._live import (
     CACHE_TTL_S,
     REFRESH_INTERVAL,
+    current_run,
     live_toggle,
     plot,
 )
@@ -156,7 +157,13 @@ def _break_at_jumps(df: pd.DataFrame, gap: pd.Timedelta = pd.Timedelta("2min")) 
     jumps = np.flatnonzero(df["timestamp_utc"].diff() > gap)
     if not len(jumps):
         return df
-    blank = pd.DataFrame({c: [pd.NaT if c == "timestamp_utc" else np.nan] for c in df.columns})
+    # Give the blank timestamp the frame's own (tz-aware) dtype: a bare NaT is tz-naive,
+    # and concatenating it with UTC timestamps degrades the column to object, which
+    # breaks `.dt` downstream.
+    blank = pd.DataFrame({
+        c: pd.Series([pd.NaT], dtype=df[c].dtype) if c == "timestamp_utc" else [np.nan]
+        for c in df.columns
+    })
     parts, prev = [], 0
     for j in jumps:
         parts += [df.iloc[prev:j], blank]
@@ -249,7 +256,7 @@ def render_trajectory(date_from, date_to, limit):
     # Fetch data
     try:
         syn_resp = fetch_synthetic_state(date_from, date_to, limit)
-        syn_items = syn_resp.items if syn_resp else []
+        syn_items = current_run(syn_resp.items) if syn_resp else []
         # Real Horizons track for the whole sidebar window (drawn on the charts).
         real_resp = fetch_real_orion(date_from, date_to, limit)
         # Synthetic rows are the newest `limit` ticks, which the window fetch above can miss

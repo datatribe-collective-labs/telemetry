@@ -24,3 +24,15 @@ def test_list_synthetic_thermal_orders_newest_first_when_desc(client, fake_sessi
 def test_list_synthetic_thermal_rejects_invalid_order(client):
     r=client.get('/telemetry/synthetic/thermal?order=newest')
     assert r.status_code == 422
+
+
+def test_list_synthetic_thermal_sorts_by_write_time_when_requested(client, fake_session, result_factory):
+    fake_session.results=[result_factory(scalar_value=0), result_factory([])]
+    r=client.get('/telemetry/synthetic/thermal?order=desc&sort_by=ingested_at')
+    assert r.status_code == 200
+    assert 'ORDER BY ingested_at DESC, timestamp_utc DESC' in fake_session.calls[1][0]
+
+
+def test_list_synthetic_thermal_rejects_invalid_sort_by(client):
+    r=client.get('/telemetry/synthetic/thermal?sort_by=x_km')
+    assert r.status_code == 422

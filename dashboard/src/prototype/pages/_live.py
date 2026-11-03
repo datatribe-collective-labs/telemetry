@@ -24,6 +24,24 @@ def live_toggle(key: str) -> bool:
     )
 
 
+def current_run(items: list) -> list:
+    """Keep the leading items that belong to the producer's current run.
+
+    Expects rows newest-written first (the API client's default: sort_by=ingested_at,
+    order=desc). Within one run the simulation clock only moves forward, so walking
+    back in write order the timestamps keep decreasing. A timestamp *later* than the
+    previous one means we crossed into an older run that had got further into the
+    mission (the producer was restarted at an earlier MET), so stop there - otherwise
+    that run's leftover rows would plot as the "latest" point.
+    """
+    kept = []
+    for item in items:
+        if kept and item.timestamp_utc > kept[-1].timestamp_utc:
+            break
+        kept.append(item)
+    return kept
+
+
 def plot(fig: go.Figure) -> None:
     """st.plotly_chart with a fixed uirevision, so zoom/pan survive live refreshes."""
     fig.update_layout(uirevision="live")

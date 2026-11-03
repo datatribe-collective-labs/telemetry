@@ -17,6 +17,7 @@ from dashboard.src.prototype.pages._explain import explain
 from dashboard.src.prototype.pages._live import (
     CACHE_TTL_S,
     REFRESH_INTERVAL,
+    current_run,
     live_toggle,
     plot,
 )
@@ -73,7 +74,7 @@ def render_thermal(date_from, date_to, limit, state_filter):
     except BackendAPIError as e:
         st.error(str(e))
         return
-    items = resp.items if resp else []
+    items = current_run(resp.items) if resp else []
 
     if not items:
         st.warning("No thermal data available for selected range.")
