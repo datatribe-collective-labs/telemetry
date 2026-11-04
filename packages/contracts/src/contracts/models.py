@@ -47,6 +47,22 @@ class OrionEphemeris(BaseModel):
     range_rate_kms: float | None = Field(None, description="Range rate (km/s)")
 
 
+class MoonEphemeris(BaseModel):
+    """JPL Horizons Moon (301) ephemeris record, Earth-centred EME2000, UT epochs."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    epoch: datetime = Field(..., description="Ephemeris epoch (UTC)")
+    jd: float = Field(..., description="Julian date")
+    x_km: float | None = Field(None, description="X coordinate (km)")
+    y_km: float | None = Field(None, description="Y coordinate (km)")
+    z_km: float | None = Field(None, description="Z coordinate (km)")
+    vx_kms: float | None = Field(None, description="X velocity (km/s)")
+    vy_kms: float | None = Field(None, description="Y velocity (km/s)")
+    vz_kms: float | None = Field(None, description="Z velocity (km/s)")
+    range_km: float | None = Field(None, description="Distance from Earth's centre (km)")
+
+
 class DonkiEvent(BaseModel):
     """NASA DONKI space weather event record."""
 
@@ -373,6 +389,14 @@ class OrionEphemerisQueryParams(BaseModel):
 class OrionEphemerisResponse(BaseModel):
     """Response for Orion ephemeris endpoint."""
     items: list[OrionEphemeris]
+    total: int
+    limit: int
+    offset: int
+
+
+class MoonEphemerisResponse(BaseModel):
+    """Response for Moon ephemeris endpoint."""
+    items: list[MoonEphemeris]
     total: int
     limit: int
     offset: int

@@ -9,6 +9,7 @@ from dashboard.src.prototype.pages import _data
 from dashboard.src.prototype.pages._controls import time_window
 from dashboard.src.prototype.pages._explain import explain
 from dashboard.src.prototype.pages._live import REFRESH_INTERVAL, plot
+from dashboard.src.prototype.pages._phases import mark_phases, mission_phases
 from dashboard.src.prototype.pages._status import POWER_STATUS, THERMAL_STATUS, status
 from dashboard.src.prototype.pages._timeline import (
     break_at_jumps,
@@ -79,6 +80,19 @@ def _power_chart(power: pd.DataFrame, shadow) -> go.Figure:
     return fig
 
 
+def _phases():
+    """Mission stages for the chart markers; the charts still work without them."""
+    try:
+        return mission_phases(_data.mission_events())
+    except BackendAPIError:
+        return []
+
+
+def _with_phases(fig: go.Figure, df: pd.DataFrame, phases) -> go.Figure:
+    mark_phases(fig, phases, df["timestamp_utc"].min(), df["timestamp_utc"].max())
+    return fig
+
+
 @st.fragment(run_every=REFRESH_INTERVAL if live else None)
 def render(date_from, date_to):
     try:
@@ -93,6 +107,7 @@ def render(date_from, date_to):
         st.info("No simulated telemetry in this time range. Start the physics model (see RUN_SERVICES.md).")
         return
 
+    phases = _phases()
     shadow = []
     if not state.empty:
         shadow = true_intervals(state["timestamp_utc"], state["eclipse_state"] != "SUNLIT", max_gap=jump_gap(state["timestamp_utc"]))
@@ -102,18 +117,18 @@ def render(date_from, date_to):
         label, color = status(THERMAL_STATUS, latest["thermal_state"])
         st.subheader(f"Temperature: :{color}[{label}]")
         explain("health.temperature")
-        plot(_temperature_chart(thermal, shadow))
+        plot(_with_phases(_temperature_chart(thermal, shadow), thermal, phases))
 
     if not power.empty:
         latest = power.iloc[-1]
         label, color = status(POWER_STATUS, latest["power_state"])
         st.subheader(f"Battery: :{color}[{latest['battery_soc_pct']:.0f} % full]")
         explain("health.battery")
-        plot(_battery_chart(power, shadow))
+        plot(_with_phases(_battery_chart(power, shadow), power, phases))
 
         st.subheader(f"Power: :{color}[{label}]")
         explain("health.power")
-        plot(_power_chart(power, shadow))
+        plot(_with_phases(_power_chart(power, shadow), power, phases))
 
 
 render(date_from, date_to)

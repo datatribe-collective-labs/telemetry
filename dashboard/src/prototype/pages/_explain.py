@@ -32,6 +32,7 @@ def data_badge(*sources: Source) -> str:
 
 SOURCES: dict[str, tuple[Source, ...]] = {
     "mission.map": ("real", "synthetic"),
+    "mission.timeline": ("real",),
     "mission.health": ("synthetic", "placeholder"),
     "health.temperature": ("synthetic",),
     "health.battery": ("synthetic",),
@@ -43,8 +44,11 @@ SOURCES: dict[str, tuple[Source, ...]] = {
 }
 
 SUMMARIES: dict[str, str] = {
-    "mission.map": "Earth is in the middle. Blue is the path Orion really flew; orange is our "
-    "simulation of it, ending where Orion is now. If the simulation is right, orange sits on blue.",
+    "mission.map": "Earth is in the middle and the grey dashed line is the Moon's path. Blue is "
+    "the path Orion really flew; orange is our simulation of it, ending where Orion is now. If the "
+    "simulation is right, orange sits on blue.",
+    "mission.timeline": "The five stages of the 10-day trip, from NASA's flight plan. The orange "
+    "line is the moment shown on this page; hover the diamonds for the engine burns.",
     "mission.health": "A quick check of the spacecraft's systems. Grey means we don't simulate "
     "that system yet.",
     "health.temperature": "The electronics must stay inside the green band. If they get too cold, "
@@ -67,16 +71,32 @@ EXPLAINERS: dict[str, str] = {
     "mission.map": """
 **What:** An Earth-centred map of Orion's trip. The dotted rings show distance from Earth.
 The wide blue band is the path Orion really flew (NASA/JPL Horizons); the thin orange line
-is our digital twin's simulation of it, ending at the orange "Orion is here" dot. The star
-marks the farthest point from Earth, at the Moon flyby.
+is our digital twin's simulation of it, ending at the orange "Orion is here" dot. The grey
+dashed line is the Moon's path over the same time (also JPL Horizons), with the Moon where
+it was at the moment shown. The star marks the farthest point from Earth, at the Moon flyby.
 
 **How to read it:** "Top-down" looks down on Earth's North Pole; "3D" can be turned with
 the mouse. Scroll to zoom, double-click to reset, hover any point for its time, distance
 and speed. The numbers above the map change on every update, because a few km per update
-is too small to see on the map.
+is too small to see on the map. With **Live** off in the sidebar, the replay slider moves
+Orion and the Moon along the real path (press Play to watch it), with no simulation needed.
 
 **Why it matters:** This is the whole idea of a digital twin: a simulation that follows the
 real spacecraft. The Model accuracy page measures how closely it does.
+""",
+    "mission.timeline": """
+**What:** The flight plan boiled down to five stages: Earth orbit after launch, the trip to
+the Moon, the lunar flyby, the trip home, and re-entry with splashdown. The stage changes
+at the big engine burns, from NASA's Artemis II overview timeline. Diamonds mark each burn,
+the capsule separation, re-entry and splashdown.
+
+**How to read it:** The orange "Now" line is the moment the rest of the page shows: the
+simulation's latest moment when Live, the replay time otherwise. Hover a stage or a
+diamond for its times. The same stage changes are marked on the Spacecraft health charts.
+
+**Why it matters:** It puts the numbers in context: a battery drain or a temperature dip
+means something different in Earth orbit than behind the Moon. The timeline was read off
+a graphical PDF and has not been fact-checked yet, so treat times as approximate.
 """,
     "mission.health": """
 **What:** The latest state of each spacecraft system in plain words: temperature and power

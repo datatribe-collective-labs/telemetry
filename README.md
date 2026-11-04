@@ -46,9 +46,11 @@ cd ../..
 
 # 3. Real data shown next to the simulation
 uv run --package pipelines python -m pipelines.ingest.jpl_orion
+uv run --package pipelines python -m pipelines.ingest.jpl_moon
 uv run --package pipelines python -m pipelines.ingest.jpl_dsn_geometry
 uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons
 uv run --package pipelines python -m pipelines.ingest.donki
+uv run --package pipelines python -m pipelines.ingest.mission_events  # mission phases (draft)
 
 # 4. Synthetic data: physics models -> Kafka -> TimescaleDB
 docker compose up -d --build physics_models physics_models_consumer
@@ -84,8 +86,9 @@ against.
 | Data | Kind | Stored in | Drives the simulation? | Shown in |
 |------|------|-----------|------------------------|----------|
 | NASA OEM trajectory arcs | real (file) | `data/oem/`, `oem_state_vectors` | ✅ the synthetic trajectory is interpolated from these | Digital Twin: Mission |
-| Artemis II attitude timeline | real (curated, **draft**) | `contracts.planned_attitude`, `mission_events` | ✅ spacecraft attitude / solar angles | - |
+| Artemis II attitude timeline | real (curated, **draft**) | `contracts.planned_attitude`, `mission_events` | ✅ spacecraft attitude / solar angles | Digital Twin: Mission (timeline strip), Spacecraft health (phase markers) |
 | JPL Horizons Orion trajectory | real | `orion_ephemeris` | no - ground truth the synthetic trajectory is compared against | Data Explorer, Digital Twin: Mission, Model accuracy |
+| JPL Horizons Moon position | real | `moon_ephemeris` | no - context on the trajectory map | Digital Twin: Mission |
 | DSN site geometry (Horizons) | real | `dsn_site_geometry` | not yet (planned input for comms) | Data Explorer, Digital Twin: Space environment |
 | GOES proton flux (iSWA) | real | `goes_integral_protons` | not yet (planned input for radiation) | Data Explorer, Digital Twin: Space environment |
 | DONKI space weather events | real | `donki_events` | not yet (planned input for radiation) | Data Explorer, Digital Twin: Space environment |
@@ -120,6 +123,7 @@ Docker; everything else runs natively with `uv run`.
 |--------|---------------|-------|
 | [JPL Close-Approach Data (CAD)](https://ssd-api.jpl.nasa.gov/doc/cad.html) - asteroid/comet close approaches | `jpl_cad` | `close_approaches` |
 | [JPL Horizons](https://ssd-api.jpl.nasa.gov/doc/horizons.html) - Artemis II Orion ephemeris | `jpl_orion` | `orion_ephemeris` |
+| JPL Horizons - Moon ephemeris (Earth-centred, same frame as Orion) | `jpl_moon` | `moon_ephemeris` |
 | JPL Horizons - Orion geometry as seen from the DSN sites | `jpl_dsn_geometry` | `dsn_site_geometry` |
 | [NASA CCMC DONKI](https://ccmc.gsfc.nasa.gov/DONKI-API/get/) - space weather events (CME, SEP, FLR, GST, HSS, ...) | `donki` | `donki_events` |
 | [NASA CCMC iSWA HAPI](https://iswa.gsfc.nasa.gov/IswaSystemWebApp/hapi/) - GOES integral proton flux | `iswa_goes_protons` | `goes_integral_protons` |

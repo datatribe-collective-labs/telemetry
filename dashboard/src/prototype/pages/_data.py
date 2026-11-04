@@ -75,6 +75,18 @@ def real_orion(date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=REAL_TTL_S, show_spinner=False)
+def moon(date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
+    df = to_frame(fetch_all(get_api().get_moon_ephemeris, date_from=date_from, date_to=date_to), "epoch")
+    return df.rename(columns={"epoch": "timestamp_utc"})
+
+
+@st.cache_data(ttl=REAL_TTL_S, show_spinner=False)
+def mission_events() -> pd.DataFrame:
+    items = get_api().get_mission_events().items
+    return pd.DataFrame([item.model_dump() for item in items])
+
+
+@st.cache_data(ttl=REAL_TTL_S, show_spinner=False)
 def goes_protons(date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
     return to_frame(fetch_all(get_api().get_goes_protons, date_from=date_from, date_to=date_to), "time")
 
