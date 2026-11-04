@@ -45,8 +45,9 @@ cd ../..
 ### 3. Real data — ingest jobs into TimescaleDB
 Run from the **repo root**. These populate the tables that the backend real-data endpoints serve.
 ```bash
-# NASA APIs: Orion ephemeris, DONKI events, GOES protons, DSN geometry, close approaches
+# NASA APIs: Orion and Moon ephemeris, DONKI events, GOES protons, DSN geometry, close approaches
 uv run --package pipelines python -m pipelines.ingest.jpl_orion
+uv run --package pipelines python -m pipelines.ingest.jpl_moon
 uv run --package pipelines python -m pipelines.ingest.donki
 uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons
 uv run --package pipelines python -m pipelines.ingest.jpl_dsn_geometry

@@ -19,6 +19,8 @@ from contracts import (
     DsnSiteGeometryResponse,
     GoesIntegralProtonsResponse,
     HealthResponse,
+    MissionEventResponse,
+    MoonEphemerisResponse,
     OrionEphemerisResponse,
     SyntheticPowerResponse,
     SyntheticStateResponse,
@@ -170,6 +172,24 @@ class BackendAPI:
         if date_to:
             params["date_to"] = date_to.isoformat()
         return self._get("/orion", params, OrionEphemerisResponse)
+
+    def get_moon_ephemeris(
+        self,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> MoonEphemerisResponse:
+        params = {"limit": limit, "offset": offset}
+        if date_from:
+            params["date_from"] = date_from.isoformat()
+        if date_to:
+            params["date_to"] = date_to.isoformat()
+        return self._get("/moon", params, MoonEphemerisResponse)
+
+    def get_mission_events(self) -> MissionEventResponse:
+        """The whole planned timeline (~110 segments; the endpoint is not paged)."""
+        return self._get("/mission-events", None, MissionEventResponse)
 
     def get_goes_protons(
         self,

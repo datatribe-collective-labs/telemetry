@@ -9,6 +9,7 @@ from backend.api.routes import (
     iswa_goes_protons,
     jpl_dsn_geometry,
     mission_events,
+    moon,
     oem,
     orion,
     synthetic,
@@ -20,7 +21,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="Telemetry API",
         description=(
-            "API for querying NASA/JPL telemetry data (close approaches, Orion ephemeris, "
+            "API for querying NASA/JPL telemetry data (close approaches, Orion and Moon ephemeris, "
             "space weather, ISWA GOES protons, DSN geometry) AND synthetic telemetry from "
             "physics models (Artemis II digital twin)"
         ),
@@ -33,6 +34,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(close_approaches.router)
     app.include_router(orion.router)
+    app.include_router(moon.router)
     app.include_router(donki.router)
     app.include_router(iswa_goes_protons.router)
     app.include_router(jpl_dsn_geometry.router)
