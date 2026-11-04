@@ -32,11 +32,12 @@ rule trips even if the global flag still lags a tick behind.
 **Why:** Localizes *which* subsystem is driving a problem before you dive into its page.
 """,
     "overview.vitals": """
-**What:** Recent history of the five numbers that decide whether the mission is fine:
-bay temperature, battery SOC, link margin, dose rate and Earth range.
+**What:** Recent history of the four charts that decide whether the mission is fine:
+node temperatures, battery SOC with array power, link margin and dose rate.
 
-**How:** Time series from the backend (`/telemetry/synthetic/*`); dashed bands are the
-contract thresholds. Hover any point for the exact UTC value.
+**How:** Time series from the backend (`/telemetry/synthetic/packet`); dashed lines are
+the contract thresholds (the temperature lines are the electronics-bay bands; the
+exterior faces may swing well past them). Hover any point for the exact UTC value.
 
 **Why:** Contracts encode "safe vs unsafe" as exact bounds — this chart shows how close
 the vehicle rides to them, i.e. *margin*, which is what trend-watchers actually track.
@@ -68,7 +69,9 @@ synthetic overlaid per-axis, with residual curves (real − synthetic) underneat
 residual panels should stay near zero; any drift is a bug in interpolation or frames.
 
 **Why:** Component-wise comparison exposes frame/time-tag errors that a scalar range
-plot would hide — e.g. the ~69 s Horizons TDB/UT time-tag gotcha documented in CLAUDE.md.
+plot would hide — e.g. a TDB/UT time-tag offset (~69 s) or ecliptic vs equatorial axes,
+both documented as Horizons gotchas in CLAUDE.md. With both handled in the ingest, a
+healthy twin stays within a few km of the real track.
 """,
     "trajectory.residuals": """
 **What:** Statistics (mean, std, max) of each residual component over the merged window.

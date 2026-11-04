@@ -115,6 +115,14 @@ def fetch_orion_ephemeris(
         "EPHEM_TYPE": "VECTORS",
         "OUT_UNITS": "'KM-S'",
         "CENTER": f"'{center}'",
+        # Earth mean equator J2000 axes (EME2000), the frame of the NASA OEM files the
+        # synthetic state uses. Horizons' default is ECLIPTIC, which differs by a
+        # 23.44 deg rotation about X and makes real vs synthetic positions disagree.
+        "REF_PLANE": "FRAME",
+        "REF_SYSTEM": "ICRF",
+        # Stamp rows in UT (VECTORS default is TDB, ~69 s ahead in 2026), matching the
+        # UTC synthetic state and the UT-stamped jpl_dsn_geometry OBSERVER tables.
+        "TIME_TYPE": "UT",
         "START_TIME": f"'{start_time}'",
         "STOP_TIME": f"'{stop_time}'",
         "STEP_SIZE": f"'{step_size}'",
@@ -132,10 +140,23 @@ def fetch_orion_ephemeris(
         print("No ephemeris data markers ($$SOE / $$EOE) found in API response.")
         return []
 
-    csv_data = result_text.split("$$SOE")[1].split("$$EOE")[0].strip()
-    df = pd.read_csv(io.StringIO(csv_data), skipinitialspace=True)
+    # Horizons prints the CSV header *above* $$SOE (separated by a row of asterisks),
+    # so the block between the markers is data only. Take the header from the last
+    # comma-separated line before $$SOE; reading the block with the default header=0
+    # would consume the first data row as column names and drop that epoch.
+    head, rest = result_text.split("$$SOE", 1)
+    csv_data = rest.split("$$EOE")[0].strip()
+    header_line = next(
+        (line for line in reversed(head.splitlines()) if "," in line), None
+    )
+    if header_line is None:
+        raise ValueError("No CSV header line found above $$SOE in Horizons response.")
+    names = [name.strip() for name in header_line.split(",")]
+    df = pd.read_csv(
+        io.StringIO(csv_data), header=None, names=names, skipinitialspace=True
+    )
     df = df.dropna(axis=1, how="all")
-    df.columns = [col.strip() for col in df.columns]
+    df = df.loc[:, [col for col in df.columns if col]]
 
     def _get_col(candidates: list[str], default_idx: int) -> str:
         for c in df.columns:

@@ -139,10 +139,12 @@ When asked to "add a data source" or "add a page," it almost always means effort
 public JSON API --> pipelines.ingest.<source> --> TimescaleDB --> streamlit_dashboard
 ```
 
-Horizons gotcha: VECTORS tables are stamped in **TDB** and OBSERVER tables in
-**UT** (~69 s apart in 2026). `jpl_dsn_geometry` stores UT; `jpl_orion`
-currently stores its TDB calendar dates as if they were UTC, so joins between
-the two are off by ~69 s.
+Horizons gotchas: VECTORS tables default to **TDB** time stamps (OBSERVER tables
+are **UT**, ~69 s apart in 2026) and to **ECLIPTIC** axes (23.44° from EME2000).
+`jpl_orion` therefore requests `TIME_TYPE=UT` and `REF_PLANE=FRAME` so its rows
+line up with the UT `jpl_dsn_geometry` tables and the EME2000 synthetic state;
+keep both parameters on any new VECTORS ingest. Horizons also prints the CSV
+header above `$$SOE`, not inside the data block.
 
 - **`packages/pipelines/src/pipelines/db.py`**: only the shared `get_connection()`.
   Each ingest module owns its own table schema and setup - see
