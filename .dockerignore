@@ -28,4 +28,3 @@ packages/
 !packages/physics_models
 !packages/backend
 !packages/pipelines
-!packages/streamlit_dashboard

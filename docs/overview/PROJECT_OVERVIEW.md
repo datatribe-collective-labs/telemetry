@@ -17,11 +17,10 @@ Open-source telemetry project that ingests, processes, and analyzes mission tele
 Source → Processing → Storage → Dashboard
 ```
 
-### 1.3 Two Dashboard Tiers
+### 1.3 Dashboard Tiers
 | Tier | Location | Purpose | Technology |
 |------|----------|---------|------------|
-| **Pipeline Explorer** | `packages/streamlit_dashboard/` | Verify ingestion pipelines, explore raw JPL/NASA data | Streamlit |
-| **Digital Twin v1 (Prototype)** | `dashboard/src/prototype/` | Rapid iteration on synthetic telemetry views, validate physics models | Streamlit + Plotly |
+| **Digital Twin v1 (Prototype)** | `dashboard/src/prototype/` | Synthetic telemetry with real NASA/JPL data alongside, validate physics models | Streamlit + Plotly |
 | **Production (Future)** | `dashboard/src/production/` | Mission Control grade, real-time, WebSocket-driven | Vanilla JS + Plotly.js |
 
 ---
@@ -99,7 +98,7 @@ Physics Models (1 Hz) → Kafka (Redpanda) → Consumer → TimescaleDB → Back
 | **ORM** | SQLAlchemy | 2.0+ | Database ORM with async support |
 | **Dashboard (Proto)** | Streamlit | 1.36+ | Rapid Python dashboard prototyping |
 | **Dashboard (Prod)** | Vanilla JS + Plotly.js | — | Production Mission Control UI |
-| **Visualization** | Plotly | 5.22+ | Interactive charts in both dashboards |
+| **Visualization** | Plotly | 5.22+ | Interactive charts in the dashboards |
 | **Contracts** | ODCS v3.1.0 + Pydantic | 2.0+ | Data contracts as single source of truth |
 
 ### 3.2 Data Science & Physics
@@ -156,7 +155,6 @@ flowchart LR
     Kafka[(Redpanda/Kafka)]
     DB[(TimescaleDB)]
     Backend["FastAPI Backend\n(packages/backend)"]
-    Dash1["Streamlit Pipeline Explorer\n(packages/streamlit_dashboard)"]
     Dash2["Streamlit Digital Twin v1\n(dashboard/src/prototype)"]
     Dash3["Production JS Dashboard\n(dashboard/src/production)"]
     
@@ -178,7 +176,6 @@ flowchart LR
     DB --> Backend
     Kafka -->|Direct| Backend
     
-    Backend --> Dash1
     Backend --> Dash2
     Backend --> Dash3
 ```
@@ -383,24 +380,6 @@ telemetry/
 │   │       └── db/
 │   │           └── session.py
 │   │
-│   └── streamlit_dashboard/          # Pipeline Explorer Dashboard
-│       ├── pyproject.toml
-│       └── src/streamlit_dashboard/
-│           ├── app.py
-│           ├── data/
-│           │   ├── engine.py
-│           │   ├── close_approaches.py
-│           │   ├── donki.py
-│           │   ├── iswa_goes_protons.py
-│           │   ├── jpl_dsn_geometry.py
-│           │   └── orion.py
-│           └── pages/
-│               ├── welcome.py
-│               ├── close_approaches.py
-│               ├── orion.py
-│               ├── donki.py
-│               ├── iswa_goes_protons.py
-│               └── jpl_dsn_geometry.py
 │
 ├── dashboard/
 │   └── src/
@@ -463,8 +442,8 @@ docker compose up -d --build --force-recreate physics_models_consumer
 # 4. Backend API (host, port 8000)
 uv run --package backend python -m backend.main
 
-# 5. Streamlit Prototype Dashboard (host, port 8501)
-uv run --package streamlit_dashboard streamlit run dashboard/src/prototype/app.py --server.port 8501 --server.headless true
+# 5. Digital Twin dashboard (host, port 8501)
+uv run --package dashboard streamlit run dashboard/src/prototype/app.py --server.port 8501 --server.headless true
 ```
 
 ### 7.3 Optional: Ingest Real Data

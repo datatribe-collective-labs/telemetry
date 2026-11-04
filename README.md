@@ -15,8 +15,7 @@ flowchart LR
     Kafka["Redpanda - Kafka"]
     DB[("TimescaleDB")]
     API["Backend API"]
-    Twin["Digital Twin dashboard - prototype"]
-    Explorer["Data Explorer - real data only"]
+    Twin["Digital Twin dashboard"]
 
     NASA --> Ingest
     Ingest --> DB
@@ -25,10 +24,9 @@ flowchart LR
     Kafka --> DB
     DB --> API
     API --> Twin
-    DB --> Explorer
 ```
 
-## Quick start: run the prototype
+## Quick start: run the dashboard
 
 Needs Docker and [`uv`](https://docs.astral.sh/uv/). Run from the repo root;
 `.env` needs `POSTGRES_USER`, `POSTGRES_PASSWORD` and `POSTGRES_DB`.
@@ -58,13 +56,13 @@ docker compose up -d --build physics_models physics_models_consumer
 # 5. Backend API (terminal 1)
 uv run --package backend python -m backend.main
 
-# 6. Prototype dashboard (terminal 2) -> http://localhost:8501
-uv run streamlit run dashboard/src/prototype/app.py
+# 6. Digital Twin dashboard (terminal 2) -> http://localhost:8501
+uv run --package dashboard streamlit run dashboard/src/prototype/app.py
 ```
 
 To speed up the simulated mission, see "Demo Replay Controls" in
 [`RUN_SERVICES.md`](RUN_SERVICES.md); it also covers stopping services and
-troubleshooting. Running only the Data Explorer is under [How to run](#how-to-run).
+troubleshooting.
 
 ## Real data vs synthetic data
 
@@ -74,8 +72,8 @@ the **synthetic data** - and uses the **real data** NASA/JPL do publish in two
 ways: as **inputs** that drive the simulation, and as **ground truth** to check it
 against.
 
-- **Real data** - published by NASA/JPL: Orion's trajectory, Deep Space Network
-  (DSN) geometry, space weather, asteroid close approaches, and the planned mission
+- **Real data** - published by NASA/JPL: Orion's trajectory, the Moon's position,
+  Deep Space Network (DSN) geometry, space weather, and the planned mission
   timeline. Fetched by batch ingest jobs (`packages/pipelines`) into TimescaleDB,
   or read from NASA files shipped in the repo (`data/oem/`).
 - **Synthetic data** - simulated spacecraft telemetry from the physics models
@@ -85,28 +83,38 @@ against.
 
 | Data | Kind | Stored in | Drives the simulation? | Shown in |
 |------|------|-----------|------------------------|----------|
-| NASA OEM trajectory arcs | real (file) | `data/oem/`, `oem_state_vectors` | ✅ the synthetic trajectory is interpolated from these | Digital Twin: Mission |
-| Artemis II attitude timeline | real (curated, **draft**) | `contracts.planned_attitude`, `mission_events` | ✅ spacecraft attitude / solar angles | Digital Twin: Mission (timeline strip), Spacecraft health (phase markers) |
-| JPL Horizons Orion trajectory | real | `orion_ephemeris` | no - ground truth the synthetic trajectory is compared against | Data Explorer, Digital Twin: Mission, Model accuracy |
-| JPL Horizons Moon position | real | `moon_ephemeris` | no - context on the trajectory map | Digital Twin: Mission |
-| DSN site geometry (Horizons) | real | `dsn_site_geometry` | not yet (planned input for comms) | Data Explorer, Digital Twin: Space environment |
-| GOES proton flux (iSWA) | real | `goes_integral_protons` | not yet (planned input for radiation) | Data Explorer, Digital Twin: Space environment |
-| DONKI space weather events | real | `donki_events` | not yet (planned input for radiation) | Data Explorer, Digital Twin: Space environment |
-| JPL close approaches (CAD) | real | `close_approaches` | no | Data Explorer |
-| State, thermal, power | synthetic | `state_snapshot`, `thermal_output`, `power_output` | - (model outputs) | Digital Twin |
-| Comms, radiation, packet, cross-model, ML features | synthetic, **placeholder** | `comms_output`, `radiation_output`, `telemetry_packet`, `cross_model_state`, `ml_feature_vectors` | - (model outputs) | Digital Twin: Overview |
+| NASA OEM trajectory arcs | real (file) | `data/oem/`, `oem_state_vectors` | ✅ the synthetic trajectory is interpolated from these | Mission |
+| Artemis II attitude timeline | real (curated, **draft**) | `contracts.planned_attitude`, `mission_events` | ✅ spacecraft attitude / solar angles | Mission (timeline strip), Spacecraft health (phase markers) |
+| JPL Horizons Orion trajectory | real | `orion_ephemeris` | no - ground truth the synthetic trajectory is compared against | Mission, Model accuracy |
+| JPL Horizons Moon position | real | `moon_ephemeris` | no - context on the trajectory map | Mission |
+| DSN site geometry (Horizons) | real | `dsn_site_geometry` | not yet (planned input for comms) | Space environment |
+| GOES proton flux (iSWA) | real | `goes_integral_protons` | not yet (planned input for radiation) | Space environment |
+| DONKI space weather events | real | `donki_events` | not yet (planned input for radiation) | Space environment |
+| JPL close approaches (CAD) | real | `close_approaches` | no | not shown (API only: `/close-approaches`) |
+| State, thermal, power | synthetic | `state_snapshot`, `thermal_output`, `power_output` | - (model outputs) | Mission, Spacecraft health |
+| Comms, radiation, packet, cross-model, ML features | synthetic, **placeholder** | `comms_output`, `radiation_output`, `telemetry_packet`, `cross_model_state`, `ml_feature_vectors` | - (model outputs) | Mission (grey "not simulated yet" tiles) |
 
-### Two dashboards
+### The dashboard
 
-| | **Data Explorer** | **Digital Twin dashboard (prototype)** |
-|---|---|---|
-| Shows | Real data only - one page per source | Synthetic telemetry, with real data alongside for comparison |
-| Code | `packages/streamlit_dashboard/` | `dashboard/src/prototype/` (Streamlit v1; a JS "Mission Control" is planned) |
-| Reads from | TimescaleDB directly | The backend API (`packages/backend`) |
-| Use it to | Check what the ingest jobs collected | Watch the simulated mission and compare it to the real trajectory |
+One Streamlit app, the **Digital Twin dashboard** (`dashboard/src/prototype/`), shows
+both kinds of data. It reads everything through the backend API
+(`packages/backend`), never the database directly, and every chart carries a badge
+saying where its data comes from: **Real · NASA/JPL**, **Synthetic · our
+simulation**, or **Placeholder · not simulated yet**.
 
-The Data Explorer came first and proved the ingest -> store -> visualize pattern;
-it is the first stage of the digital twin, not a separate project.
+| Page | Shows |
+|------|-------|
+| Mission | Where Orion is: real vs simulated trajectory with the Moon, mission timeline, replay, system status |
+| Spacecraft health | Simulated temperature, battery and power |
+| Space environment | Real solar particles (GOES), solar events (DONKI) and DSN antenna contact, incl. signal delay |
+| Model accuracy (for engineers) | Distance between the simulated and the real trajectory, plus the raw data |
+
+An earlier real-data-only app, the Data Explorer (`packages/streamlit_dashboard`),
+proved the ingest -> store -> visualize pattern and was retired once the Digital
+Twin dashboard covered its data; see
+[`docs/decisions/ONE_DASHBOARD.md`](docs/decisions/ONE_DASHBOARD.md). A JS "Mission
+Control" front end is planned later
+([`docs/architecture/DASHBOARD_ARCHITECTURE.md`](docs/architecture/DASHBOARD_ARCHITECTURE.md)).
 
 More docs: [`docs/README.md`](docs/README.md) (index),
 [`RUN_SERVICES.md`](RUN_SERVICES.md) (full startup order and troubleshooting),
@@ -144,7 +152,7 @@ at top-level routes (`/orion`, `/donki`, ...) and synthetic data under
   (Kafka on `:9092`), `physics_models` (producer) and `physics_models_consumer`,
   plus the on-demand `tests` service (see "Tests" below).
 - **Natively via `uv run`**: the ingest jobs, the backend API (`:8000`) and the
-  two dashboards (`:8501`). They talk to the Dockerized database over
+  dashboard (`:8501`). They talk to the Dockerized database over
   `localhost:5433`.
 
 ## How to run
@@ -159,40 +167,35 @@ cp .env.example .env        # then set POSTGRES_USER / POSTGRES_PASSWORD / POSTG
 uv sync --all-packages      # one shared .venv with every workspace package
 ```
 
-`.env` is read by Docker Compose, the ingest jobs, the backend and the Data
-Explorer. `DATABASE_URL` is optional; without it, host-side tools connect to
+`.env` is read by Docker Compose, the ingest jobs and the backend. `DATABASE_URL` is optional; without it, host-side tools connect to
 `localhost:5433` using the three `POSTGRES_*` values.
 
-### Real data path - ingest + Data Explorer
+### Everything
+
+Follow [Quick start: run the dashboard](#quick-start-run-the-dashboard), or
+[`RUN_SERVICES.md`](RUN_SERVICES.md) for the full startup order. The dashboard
+needs the backend running (`http://localhost:8000`, interactive API docs at
+http://localhost:8000/docs).
+
+### Real data only
+
+The real data doesn't need Kafka or the physics models: start `timescaledb`, run the
+ingest jobs (each creates its own table) and the backend, then open the dashboard
+with **Live** off in the sidebar, or inspect the data through the API or SQL (see
+[Checking the data](#checking-the-data)). The synthetic charts stay empty until the
+physics models run.
 
 ```bash
-# 1. Database
 docker compose up -d timescaledb
-
-# 2. Ingest the real data (each job creates its own table)
-uv run --package pipelines python -m pipelines.ingest.jpl_cad
 uv run --package pipelines python -m pipelines.ingest.jpl_orion
+uv run --package pipelines python -m pipelines.ingest.jpl_moon
 uv run --package pipelines python -m pipelines.ingest.jpl_dsn_geometry
 uv run --package pipelines python -m pipelines.ingest.donki
 uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons
 uv run --package pipelines python -m pipelines.ingest.nasa_oem
 uv run --package pipelines python -m pipelines.ingest.mission_events
-
-# 3. Data Explorer -> http://localhost:8501
-uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/src/streamlit_dashboard/app.py
+uv run --package pipelines python -m pipelines.ingest.jpl_cad   # optional: API only
 ```
-
-Pages: Welcome, Close Approaches, Artemis II Orion, DSN Coverage, NASA DONKI,
-GOES Proton Flux.
-
-### Synthetic data path - prototype (Digital Twin dashboard)
-
-See [Quick start: run the prototype](#quick-start-run-the-prototype). Pages:
-Mission, Spacecraft health, Space environment, and Model accuracy (for engineers).
-
-Both dashboards default to port 8501, so run one at a time or pass
-`--server.port 8502` to the second. The backend's interactive API docs are at
-http://localhost:8000/docs.
 
 ### Ingest options
 
@@ -242,8 +245,9 @@ Each test file covers one function (e.g.
 `test_<function>_<expected behavior>`. HTTP calls are mocked with
 `responses`, database connections with `unittest.mock.MagicMock`.
 
-Unit tests cover all pipeline ingest modules, the backend (`tests/unit/backend`)
-and the physics models (`tests/unit/physics_models`).
+Unit tests cover all pipeline ingest modules, the backend (`tests/unit/backend`),
+the physics models (`tests/unit/physics_models`) and the dashboard's helpers
+(`tests/unit/dashboard`).
 
 ```
 # in Docker - from the repo root
@@ -260,21 +264,22 @@ imports like `pydantic`/`fastapi` fail at test collection. Run
 `uv sync --all-packages` first if you hit `ModuleNotFoundError` in tests.
 
 Live datasource and database checks belong under `tests/integration/` and have
-their own datasource-specific runner.
+their own datasource-specific runner (e.g. `make test-orion` runs the Orion ingest
+against TimescaleDB in Docker).
 
 ## Adding another data source
 
-The Data Explorer is structured as one Streamlit page per real data source
-(`packages/streamlit_dashboard/src/streamlit_dashboard/`):
+A real data source flows ingest -> TimescaleDB -> backend -> dashboard:
 
-- `data/` - one query module per source (e.g. `data/close_approaches.py`),
-  plus the shared `data/engine.py` (`get_engine()`, cached with
-  `st.cache_resource`)
-- `pages/` - one page per source, wired into the sidebar nav via
-  `st.Page(...)` in `app.py`
-
-To add a new source: add its ingest job under
-`packages/pipelines/src/pipelines/ingest/`, a matching `data/<source>.py`
-query module, a `pages/<source>.py` page, and register the page in the
-`pages` list in `app.py`. Add unit tests for the ingest job under
-`tests/unit/pipelines/ingest/<source>/`, following the layout in "Tests" above.
+1. **Ingest:** a self-contained module `packages/pipelines/src/pipelines/ingest/<source>.py`
+   that owns its table (follow `jpl_cad.py`: schema DDL, hypertable, dataclass,
+   `fetch_*` / `upsert_*` / `main()`).
+2. **Backend:** a response model in `packages/contracts/src/contracts/models.py`, an ORM
+   model in `packages/backend/src/backend/models.py`, and a route in
+   `packages/backend/src/backend/api/routes/<source>.py` registered in
+   `backend/api/__init__.py`.
+3. **Dashboard:** a client method in `dashboard/src/prototype/data/backend_api.py`, a
+   cached loader in `pages/_data.py`, the chart on a page, and its badge / summary /
+   explainer entries in `pages/_explain.py` (a unit test keeps those in sync).
+4. **Tests:** unit tests under `tests/unit/pipelines/ingest/<source>/` and
+   `tests/unit/backend/`, following the layout in "Tests" above.

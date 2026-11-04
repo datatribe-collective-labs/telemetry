@@ -168,10 +168,13 @@ simulation.
 **How to read it:** "Can reach Orion" means Orion was at least 10° above that site's
 horizon. That cutoff is a model assumption chosen in this project (low over the horizon
 the signal passes through more air), not an official DSN rule. The positions are real
-geometry from JPL Horizons, in hourly steps.
+geometry from JPL Horizons, in hourly steps. The signal time is Horizons' one-way light
+time: radio travels at the speed of light, about 300,000 km per second, so near the Moon
+a message needs over a second each way.
 
 **Why it matters:** The three sites are spread around the globe so that, as Earth turns,
-at least one of them can usually talk to the spacecraft.
+at least one of them can usually talk to the spacecraft. The delay is why anything that needs
+a split-second reaction is handled on board, by the crew or Orion's computers, not from Earth.
 """,
     "environment.windows": """
 **What:** For each antenna site, the stretches of time when it could reach Orion

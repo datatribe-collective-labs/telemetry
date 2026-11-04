@@ -6,11 +6,12 @@ Four pages, written for non-experts first:
   Space environment  solar particles, solar events, antenna contact (real)
   Model accuracy     simulated vs real trajectory (for engineers)
 
-Separate from the Data Explorer in packages/streamlit_dashboard/. Reads everything
-through the FastAPI backend, which must be running at http://localhost:8000.
+The project's one dashboard (the real-data-only Data Explorer was retired, see
+docs/decisions/ONE_DASHBOARD.md). Reads everything through the FastAPI backend, which
+must be running at http://localhost:8000.
 
 Run:
-    uv run streamlit run dashboard/src/prototype/app.py
+    uv run --package dashboard streamlit run dashboard/src/prototype/app.py
 """
 
 import sys

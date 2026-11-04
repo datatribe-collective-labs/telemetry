@@ -4,9 +4,13 @@
 > non-experts first: Mission, Spacecraft health, Space environment, and Model accuracy (for
 > engineers). See `dashboard/README.md` for what each page shows; page lists below are the
 > original plan.
+>
+> **Status update (2026-11-04, issue #32):** the Pipeline Explorer tier
+> (`packages/streamlit_dashboard/`, a.k.a. the Data Explorer) was **retired**; the Digital
+> Twin dashboard shows the real data through the backend. Two tiers remain: the Streamlit
+> prototype and the future JS production dashboard. See `docs/decisions/ONE_DASHBOARD.md`.
 
 **Status:** 
-- **Prototype:** `packages/streamlit_dashboard/` — data source/pipeline exploration only (existing)
 - **Digital Twin v1:** `dashboard/src/prototype/` (Streamlit + Plotly) — synthetic telemetry pages
 - **Production:** `dashboard/` (Vanilla JS + Plotly.js) — **this is the real dashboard**
 
@@ -19,24 +23,15 @@
 
 ## 1. Dashboard Architecture
 
-### Three Tiers
+### Tiers
 
 | Tier | Location | Purpose | Technology |
 |------|----------|---------|------------|
-| **Pipeline Explorer** | `packages/streamlit_dashboard/` | Explore raw JPL/NASA data ingestion, verify pipelines | Streamlit (existing) |
+| ~~Pipeline Explorer~~ | ~~`packages/streamlit_dashboard/`~~ | Retired 2026-11-04 (#32), see `docs/decisions/ONE_DASHBOARD.md` | - |
 | **Digital Twin v1 (Prototype)** | `dashboard/src/prototype/` | Rapid iteration on synthetic telemetry views, validate physics models | Streamlit + Plotly |
 | **Production Dashboard** | `dashboard/src/production/` | Mission Control grade, real-time, WebSocket-driven | Vanilla JS + Plotly.js |
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    PIPELINE EXPLORER (separate repo area)                   │
-│  packages/streamlit_dashboard/                                              │
-│  Pages: Close Approaches, Orion Ephemeris, DSN Geometry, DONKI, GOES       │
-│  Purpose: Verify ingestion pipelines, explore raw JPL data                 │
-│  ─────────────────────────────────────────────────────────────────────────  │
-│  NO synthetic telemetry pages here. Pure JPL/NASA data exploration.        │
-└─────────────────────────────────────────────────────────────────────────────┘
-
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                    DIGITAL TWIN v1 (Streamlit Prototype)                    │
 │  dashboard/src/prototype/                                                   │
@@ -314,7 +309,6 @@ The FastAPI backend at `packages/backend/src/backend/` already has **all synthet
 dashboard/src/prototype/
 ├── app.py                    # Main entry + navigation
 ├── data/
-│   ├── engine.py             # DB engine (shared or copy from streamlit_dashboard)
 │   ├── backend_api.py        # REST client for FastAPI
 │   ├── synthetic.py          # Synthetic telemetry queries
 │   └── real_data/            # Real data queries (orion.py, etc.)
@@ -333,7 +327,7 @@ dashboard/src/prototype/
 
 **Current state:** only `overview.py`, `trajectory.py`, `thermal.py`, `power.py`, `space_weather.py`, `dsn_coverage.py` exist (`data/` contains only `backend_api.py`). `welcome.py`, `comms.py`, `radiation.py`, `anomalies.py`, `coupling.py` remain to be built.
 
-**Note:** `packages/streamlit_dashboard/` remains unchanged — it's for pipeline/JPL data exploration only. The Digital Twin prototype lives in `dashboard/src/prototype/`.
+**Note:** the Digital Twin prototype in `dashboard/src/prototype/` is the only Streamlit app; the former `packages/streamlit_dashboard/` was retired (#32).
 
 ### 4.3 Backend API Client Pattern
 
@@ -443,9 +437,9 @@ dashboard/src/production/
 ## 8. Next Steps
 
 1. **Add backend API routes** for synthetic telemetry (already have Pydantic response models)
-2. **Create `backend_api.py`** client in streamlit_dashboard
+2. **Create `backend_api.py`** client in `dashboard/src/prototype/data/` (done)
 3. **Build Streamlit pages**: overview → trajectory → thermal → power
-4. **Integrate real data pages**: space_weather (merge donki/goes/dsn), keep close_approaches
+4. **Integrate real data pages**: space_weather (merge donki/goes/dsn) (done as Space environment; close_approaches dropped, #32)
 5. **Add WebSocket** for live updates (phase 2)
 6. **Build Comms/Radiation models** → unlock those dashboard pages
 7. **Build Anomaly/ML pipeline** → unlock anomaly page

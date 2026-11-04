@@ -1,7 +1,7 @@
 .PHONY: help compose-config db-up db-status db-down db-reset test-orion test-orion-pipeline test-orion-db ingest-orion dashboard db-tables db-schema db-records
 
 COMPOSE ?= docker compose
-PYTHONPATHS := packages/pipelines/src:packages/streamlit_dashboard/src
+PYTHONPATHS := packages/pipelines/src
 
 help:
 	@printf '%s\n' \
@@ -14,7 +14,7 @@ help:
 		'make test-orion-pipeline  Run only the JPL pipeline test in Docker' \
 		'make test-orion-db  Run only TimescaleDB query tests in Docker' \
 		'make ingest-orion   Run the Orion JPL ingest job on the host' \
-		'make dashboard       Start the Streamlit dashboard' \
+		'make dashboard       Start the Digital Twin dashboard (needs the backend)' \
 		'make db-tables       List database tables' \
 		'make db-schema       Describe the Orion table' \
 		'make db-records      Show stored Orion records'
@@ -40,12 +40,12 @@ test-orion:
 
 test-orion-pipeline:
 	$(COMPOSE) run --rm --build orion-tests \
-		uv run --package streamlit-dashboard python -m unittest \
+		uv run --package pipelines python -m unittest \
 		tests.integration.test_orion_feature.OrionPipelineIntegrationTests -v
 
 test-orion-db:
 	$(COMPOSE) run --rm --build orion-tests \
-		uv run --package streamlit-dashboard python -m unittest \
+		uv run --package pipelines python -m unittest \
 		tests.integration.test_orion_feature.OrionTimescaleIntegrationTests -v
 
 ingest-orion:
@@ -58,9 +58,9 @@ ingest-orion:
 dashboard:
 	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; \
 	if command -v uv >/dev/null 2>&1; then \
-		uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/src/streamlit_dashboard/app.py --server.headless true --browser.gatherUsageStats false; \
+		uv run --package dashboard streamlit run dashboard/src/prototype/app.py --server.headless true --browser.gatherUsageStats false; \
 	else \
-		.venv/bin/streamlit run packages/streamlit_dashboard/src/streamlit_dashboard/app.py --server.headless true --browser.gatherUsageStats false; \
+		.venv/bin/streamlit run dashboard/src/prototype/app.py --server.headless true --browser.gatherUsageStats false; \
 	fi
 
 db-tables:

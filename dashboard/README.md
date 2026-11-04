@@ -1,11 +1,10 @@
 # Digital Twin Dashboard
 
-Dashboards for the Artemis II / Orion digital twin: **synthetic data** (spacecraft
-telemetry simulated by `packages/physics_models`) shown with **real data** (NASA/JPL)
-alongside for comparison. See "Real data vs synthetic data" in the root `README.md`.
-
-Not to be confused with the **Data Explorer** (`packages/streamlit_dashboard/`),
-which shows real data only, straight from TimescaleDB.
+The project's one dashboard for the Artemis II / Orion digital twin: **synthetic data**
+(spacecraft telemetry simulated by `packages/physics_models`) shown with **real data**
+(NASA/JPL) alongside for comparison. See "Real data vs synthetic data" in the root
+`README.md`. It replaced the earlier real-data-only Data Explorer
+(`docs/decisions/ONE_DASHBOARD.md`).
 
 Strategy: Streamlit now, a Vanilla JS + Plotly.js "Mission Control" later (see
 `docs/architecture/DASHBOARD_ARCHITECTURE.md`).
@@ -23,7 +22,7 @@ one shared sidebar (a **Live** toggle, or a mission-time slider when Live is off
 |------|---------------------|----------------|-----------|
 | Mission | Where is Orion, and is it OK? | trajectory, thermal/power state | JPL Horizons Orion trajectory |
 | Spacecraft health | Is it warm enough, and does it have power? | thermal, power, eclipse | - |
-| Space environment | What is space around it like; can we talk to it? | - | GOES protons, DONKI events, DSN geometry |
+| Space environment | What is space around it like; can we talk to it, and how long does a signal take? | - | GOES protons, DONKI events, DSN geometry |
 | Model accuracy (for engineers) | Does the simulation match reality? | trajectory | JPL Horizons Orion trajectory |
 
 Comms and radiation are not simulated yet (fixed placeholders in `physics_models`), so
@@ -49,12 +48,15 @@ The backend must be running, with data in TimescaleDB (full startup order in
 `RUN_SERVICES.md`). From the repo root:
 
 ```bash
-uv sync --all-packages   # the dashboard needs streamlit + httpx + contracts in the shared .venv
-uv run --package backend python -m backend.main             # terminal 1
-uv run streamlit run dashboard/src/prototype/app.py         # terminal 2 -> http://localhost:8501
+uv sync --all-packages
+uv run --package backend python -m backend.main                              # terminal 1
+uv run --package dashboard streamlit run dashboard/src/prototype/app.py       # terminal 2 -> http://localhost:8501
 ```
 
-It is not a workspace package, so it runs with a plain `uv run`.
+`dashboard/pyproject.toml` makes `dashboard` a *virtual* workspace member: it declares
+the dashboard's dependencies (`streamlit`, `plotly`, `pandas`, `httpx`, `contracts`) but
+isn't built or installed, so pages keep importing each other as
+`dashboard.src.prototype...` from the repo root (`app.py` puts it on `sys.path`).
 
 ## `src/replay/`
 
