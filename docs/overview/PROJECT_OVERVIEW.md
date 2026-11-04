@@ -39,7 +39,7 @@ Source → Processing → Storage → Dashboard
 | **Kafka Consumer** | ✅ Working | Consumes → TimescaleDB with upsert logic, demultiplexes telemetry topic |
 | **Database Schema (Alembic)** | ✅ Applied | 9 hypertables: `state_snapshot`, `thermal_output`, `power_output`, `comms_output`, `radiation_output`, `telemetry_packet`, `cross_model_state`, `ml_feature_vectors`, `anomaly_events` |
 | **Backend API** | ✅ 12 Synthetic Endpoints | `/telemetry/synthetic/*` — all return lowercase JSON keys (28 endpoints total incl. real data + health) |
-| **Streamlit Prototype Dashboard** | ✅ 6 Pages | Overview, Trajectory, Thermal, Power, Space Weather, DSN Coverage |
+| **Streamlit Prototype Dashboard** | ✅ 4 Pages | Mission, Spacecraft health, Space environment, Model accuracy |
 | **Docker Compose Stack** | ✅ Running | `redpanda`, `timescaledb`, `physics_models`, `physics_models_consumer` all healthy |
 | **Real Data Pipelines** | ✅ 5 Ingest Modules | JPL CAD, JPL Orion (Horizons), NASA DONKI, GOES Proton Flux (iSWA), JPL DSN Geometry (Horizons observer) |
 
@@ -287,22 +287,22 @@ flowchart LR
 
 | Table | Source | Update Cadence | Key Fields | Dashboard Page |
 |-------|--------|----------------|------------|----------------|
-| `orion_ephemeris` | JPL Horizons (-1024) | 4 min (OEM), 1s (burns) | x,y,z,vx,vy,vz, range, speed, light_time | Orion Trajectory |
+| `orion_ephemeris` | JPL Horizons (-1024) | 4 min (OEM), 1s (burns) | x,y,z,vx,vy,vz, range, speed, light_time | Mission, Model accuracy |
 | `close_approaches` | JPL SSD CAD API | Daily batch | des, CA_time, dist, v_rel, h_mag | Close Approaches |
-| `donki_events` | NASA DONKI | ~Hourly | CME, SEP, FLR, GST events | Space Weather |
-| `goes_integral_protons` | ISWA HAPI (GOES) | 5 min | P1-P500 integral flux (pfu) | Radiation Monitor |
-| `dsn_site_geometry` | JPL Horizons (observer) | 4 min | azimuth, elevation, range, visible per DSS | DSN Coverage |
+| `donki_events` | NASA DONKI | ~Hourly | CME, SEP, FLR, GST events | Space environment |
+| `goes_integral_protons` | ISWA HAPI (GOES) | 5 min | P1-P500 integral flux (pfu) | Space environment |
+| `dsn_site_geometry` | JPL Horizons (observer) | 4 min | azimuth, elevation, range, visible per DSS | Space environment |
 
 ### 5.2 Synthetic Data (Physics Models → Kafka → Backend → TimescaleDB)
 
 | Kafka Topic | Contract | Physics Model | Key Fields | Dashboard Page |
 |-------------|----------|---------------|------------|----------------|
-| `trajectory` | `SyntheticStateSnapshot` | StateEngine | position, velocity, solar_flux, eclipse, DSN vis | State Engine |
-| `telemetry` | `SyntheticThermalOutput` | Thermal (3-node) | T_sun, T_shadow, T_bay, q_solar, q_rad, heater | Thermal |
-| `telemetry` | `SyntheticPowerOutput` | Power | array_W, SOC, V, I, net_W, available_W, state | Power |
+| `trajectory` | `SyntheticStateSnapshot` | StateEngine | position, velocity, solar_flux, eclipse, DSN vis | Mission, Model accuracy |
+| `telemetry` | `SyntheticThermalOutput` | Thermal (3-node) | T_sun, T_shadow, T_bay, q_solar, q_rad, heater | Spacecraft health |
+| `telemetry` | `SyntheticPowerOutput` | Power | array_W, SOC, V, I, net_W, available_W, state | Spacecraft health |
 | `telemetry` | `SyntheticCommsOutput` | Comms (TBD) | EIRP, FSPL, Eb/N0, margin, rate, SQ, state | Comms |
 | `telemetry` | `SyntheticRadiationOutput` | Radiation (TBD) | dose_rate, cumulative, degradation_factors, SEP | Radiation |
-| `telemetry` | `SyntheticTelemetryPacket` | PacketAssembler | All combined + all_nominal | Overview / Health |
+| `telemetry` | `SyntheticTelemetryPacket` | PacketAssembler | All combined + all_nominal | - (Mission reads thermal/power directly) |
 | `cross_model_state` | `SyntheticCrossModelState` | CrossModelBus | coupling variables (1-tick lag) | Coupling Debug |
 | `events` | `SyntheticAnomalyEvent` | AnomalyDetector (TBD) | type, layer, severity, field, residual | Anomalies |
 | `ml_features` | `SyntheticMLFeatureVector` | MLFeatureBuilder (TBD) | 37 features for ML | ML Debug |

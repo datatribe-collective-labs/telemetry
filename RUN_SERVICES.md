@@ -63,6 +63,12 @@ uv run --package pipelines python -m pipelines.ingest.mission_events  # DRAFT da
 # the `events` topic is reserved for the anomaly detector, not yet implemented)
 docker compose up -d --build --force-recreate physics_models
 
+# Demo tip: the simulated Orion only moves once NASA's OEM trajectory data starts
+# (Apr 2 02:00 UTC = 12,300 s after liftoff; before that the state engine holds it at the
+# first OEM point). To watch it fly on the dashboard, start there and speed up 60x
+# (1 tick/s stays; each tick covers 60 s of mission, so the 9-day flight takes ~3.5 h):
+#   PHYSICS_MODELS_START_MET_SECONDS=12300 PHYSICS_MODELS_TIME_SCALE=60 docker compose up -d --force-recreate physics_models
+
 # Verify it's producing (producer logs may not appear due to Docker stdout buffering)
 docker exec telemetry-redpanda-1 rpk topic consume telemetry --num 5
 ```

@@ -1,5 +1,10 @@
 # Digital Twin Dashboard v1 — Design (Streamlit Prototype)
 
+> **Status update (2026-11-04, issue #26):** the prototype was consolidated into four pages for
+> non-experts first: Mission, Spacecraft health, Space environment, and Model accuracy (for
+> engineers). See `dashboard/README.md` for what each page shows; page lists below are the
+> original plan.
+
 **Date:** 2026-10-19
 **Location:** `dashboard/src/prototype/` (Streamlit + Plotly)
 **Scope:** the *Digital Twin* dashboard. `packages/streamlit_dashboard/` is a separate,

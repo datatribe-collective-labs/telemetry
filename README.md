@@ -83,12 +83,12 @@ against.
 
 | Data | Kind | Stored in | Drives the simulation? | Shown in |
 |------|------|-----------|------------------------|----------|
-| NASA OEM trajectory arcs | real (file) | `data/oem/`, `oem_state_vectors` | ✅ the synthetic trajectory is interpolated from these | Digital Twin: Trajectory |
+| NASA OEM trajectory arcs | real (file) | `data/oem/`, `oem_state_vectors` | ✅ the synthetic trajectory is interpolated from these | Digital Twin: Mission |
 | Artemis II attitude timeline | real (curated, **draft**) | `contracts.planned_attitude`, `mission_events` | ✅ spacecraft attitude / solar angles | - |
-| JPL Horizons Orion trajectory | real | `orion_ephemeris` | no - ground truth the synthetic trajectory is compared against | Data Explorer, Digital Twin: Trajectory |
-| DSN site geometry (Horizons) | real | `dsn_site_geometry` | not yet (planned input for comms) | Data Explorer, Digital Twin: DSN Coverage |
-| GOES proton flux (iSWA) | real | `goes_integral_protons` | not yet (planned input for radiation) | Data Explorer, Digital Twin: Space Weather |
-| DONKI space weather events | real | `donki_events` | not yet (planned input for radiation) | Data Explorer, Digital Twin: Space Weather |
+| JPL Horizons Orion trajectory | real | `orion_ephemeris` | no - ground truth the synthetic trajectory is compared against | Data Explorer, Digital Twin: Mission, Model accuracy |
+| DSN site geometry (Horizons) | real | `dsn_site_geometry` | not yet (planned input for comms) | Data Explorer, Digital Twin: Space environment |
+| GOES proton flux (iSWA) | real | `goes_integral_protons` | not yet (planned input for radiation) | Data Explorer, Digital Twin: Space environment |
+| DONKI space weather events | real | `donki_events` | not yet (planned input for radiation) | Data Explorer, Digital Twin: Space environment |
 | JPL close approaches (CAD) | real | `close_approaches` | no | Data Explorer |
 | State, thermal, power | synthetic | `state_snapshot`, `thermal_output`, `power_output` | - (model outputs) | Digital Twin |
 | Comms, radiation, packet, cross-model, ML features | synthetic, **placeholder** | `comms_output`, `radiation_output`, `telemetry_packet`, `cross_model_state`, `ml_feature_vectors` | - (model outputs) | Digital Twin: Overview |
@@ -184,7 +184,7 @@ GOES Proton Flux.
 ### Synthetic data path - prototype (Digital Twin dashboard)
 
 See [Quick start: run the prototype](#quick-start-run-the-prototype). Pages:
-Overview / Health, Trajectory, Thermal, Power, Space Weather, DSN Coverage.
+Mission, Spacecraft health, Space environment, and Model accuracy (for engineers).
 
 Both dashboards default to port 8501, so run one at a time or pass
 `--server.port 8502` to the second. The backend's interactive API docs are at

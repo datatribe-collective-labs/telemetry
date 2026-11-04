@@ -1,267 +1,193 @@
-"""Viewer explainers for dashboard visualizations.
+"""Data-source badges, one-line summaries and explainers for every chart.
 
-Every chart gets an "About this visualization" expander answering:
-WHAT it shows / HOW to read it / WHY it matters.
+Each chart calls ``explain("<page>.<chart>")``, which renders, from the three
+dicts below (all keyed the same; a unit test keeps them in sync with the pages):
+  1. badges saying where the data comes from (SOURCES),
+  2. one plain-language sentence (SUMMARIES),
+  3. an "About this chart" expander with What / How to read / Why (EXPLAINERS).
 
-Texts are grounded in the ODCS contracts (packages/contracts/src/odcs/) and the
-Artemis II mission docs (docs/overview/, data/oem/). Synthetic = physics models
-output (contracts 01-05); Real = JPL/NASA API data via pipelines.
+The dashboard is written for non-experts first. Real = published by NASA/JPL;
+Synthetic = simulated by our physics models (contracts 01-05); Placeholder =
+fixed stand-in values where a model doesn't exist yet.
 """
+
+from typing import Literal
 
 import streamlit as st
 
+Source = Literal["real", "synthetic", "placeholder"]
+
+# Same blue/orange as the Mission map's real/simulated lines.
+BADGES: dict[Source, str] = {
+    "real": ":blue-badge[Real · NASA/JPL]",
+    "synthetic": ":orange-badge[Synthetic · our simulation]",
+    "placeholder": ":gray-badge[Placeholder · not simulated yet]",
+}
+
+
+def data_badge(*sources: Source) -> str:
+    """Markdown for one badge per data source, e.g. ``st.markdown(data_badge("real"))``."""
+    return " ".join(BADGES[s] for s in sources)
+
+
+SOURCES: dict[str, tuple[Source, ...]] = {
+    "mission.map": ("real", "synthetic"),
+    "mission.health": ("synthetic", "placeholder"),
+    "health.temperature": ("synthetic",),
+    "health.battery": ("synthetic",),
+    "health.power": ("synthetic",),
+    "environment.particles": ("real",),
+    "environment.contact_now": ("real",),
+    "environment.windows": ("real",),
+    "accuracy.separation": ("real", "synthetic"),
+}
+
+SUMMARIES: dict[str, str] = {
+    "mission.map": "Earth is in the middle. Blue is the path Orion really flew; orange is our "
+    "simulation of it, ending where Orion is now. If the simulation is right, orange sits on blue.",
+    "mission.health": "A quick check of the spacecraft's systems. Grey means we don't simulate "
+    "that system yet.",
+    "health.temperature": "The electronics must stay inside the green band. If they get too cold, "
+    "a heater switches on (red bands).",
+    "health.battery": "How full the battery is, like a phone's battery percentage. It drains "
+    "when Orion is in shadow (grey bands) and recharges in sunlight.",
+    "health.power": "Power from the solar panels versus power the spacecraft uses. When the "
+    "orange line is below the grey one, the battery makes up the difference.",
+    "environment.particles": "Energetic particles from the Sun, measured near Earth. Inside the "
+    "coloured bands counts as a solar radiation storm; the diamonds below are solar events.",
+    "environment.contact_now": "NASA talks to Orion through three giant antenna sites around the "
+    "world. A site can only reach Orion when Orion is above its horizon.",
+    "environment.windows": "When each site could reach Orion. Red bands are times when no site "
+    "could.",
+    "accuracy.separation": "How many km the simulated Orion is from the real one at the same "
+    "moment. Lower is better; a few km over a 400,000 km trip is a very good match.",
+}
+
 EXPLAINERS: dict[str, str] = {
-    # ---- Overview page ----
-    "overview.status": """
-**What:** The spacecraft's latest self-reported health line: mission clock timestamp,
-subsystem states and the aggregated `all_nominal` flag from the synthetic telemetry packet.
+    "mission.map": """
+**What:** An Earth-centred map of Orion's trip. The dotted rings show distance from Earth.
+The wide blue band is the path Orion really flew (NASA/JPL Horizons); the thin orange line
+is our digital twin's simulation of it, ending at the orange "Orion is here" dot. The star
+marks the farthest point from Earth, at the Moon flyby.
 
-**How:** Green = subsystem reports NOMINAL per the ODCS contract rules (e.g. battery SOC
-> 20 %; bay temp inside 249–310 K). Any state outside its contract band flips the flag.
+**How to read it:** "Top-down" looks down on Earth's North Pole; "3D" can be turned with
+the mouse. Scroll to zoom, double-click to reset, hover any point for its time, distance
+and speed. The numbers above the map change on every update, because a few km per update
+is too small to see on the map.
 
-**Why:** Mirrors a Mission Control "GO/NO-GO" wall — the first thing an operator looks at.
+**Why it matters:** This is the whole idea of a digital twin: a simulation that follows the
+real spacecraft. The Model accuracy page measures how closely it does.
 """,
-    "overview.subsystems": """
-**What:** One card per subsystem (Thermal / Power / Comms / Radiation) with its current
-state from the combined telemetry packet.
+    "mission.health": """
+**What:** The latest state of each spacecraft system in plain words: temperature and power
+from our physics models, plus the radio link and radiation, which we don't simulate yet.
 
-**How:** States come straight from the models (`thermal_state`, `power_state`,
-`comm_state`, plus the SEP flag from radiation). Cards turn amber/red when a contract
-rule trips even if the global flag still lags a tick behind.
+**How to read it:** Green means OK; orange or red means a limit from the data contracts
+was crossed (for example battery below 20 %). Grey means "not simulated yet": those
+models are being built by other contributors. Real antenna and particle data is on the
+Space environment page.
 
-**Why:** Localizes *which* subsystem is driving a problem before you dive into its page.
+**Why it matters:** Like a car's dashboard warning lights: one look tells you whether
+anything needs attention, and the Spacecraft health page shows why.
 """,
-    "overview.vitals": """
-**What:** Recent history of the four charts that decide whether the mission is fine:
-node temperatures, battery SOC with array power, link margin and dose rate.
+    "health.temperature": """
+**What:** The temperature of the electronics bay, where Orion's computers and batteries
+sit, from our 3-part thermal model of the spacecraft.
 
-**How:** Time series from the backend (`/telemetry/synthetic/packet`); dashed lines are
-the contract thresholds (the temperature lines are the electronics-bay bands; the
-exterior faces may swing well past them). Hover any point for the exact UTC value.
+**How to read it:** The green band is the safe range from the thermal data contract:
+−24 °C (249 K) to 37 °C (310 K). Red bands show when the survival heater was on: it
+switches on below −5 °C and off above −3 °C. Grey bands show when the simulated Orion
+was in Earth's or the Moon's shadow.
 
-**Why:** Contracts encode "safe vs unsafe" as exact bounds — this chart shows how close
-the vehicle rides to them, i.e. *margin*, which is what trend-watchers actually track.
+**Why it matters:** In space, the side facing the Sun gets very hot and the shadow side
+very cold. The electronics must stay in between, or they stop working.
 """,
-    # ---- Trajectory page ----
-    "trajectory.3d": """
-**What:** Earth-centered map (EME2000 frame) of where Orion is. Earth is in the middle
-and the dotted rings show distance from Earth. The wide blue band is the real path from
-NASA/JPL; the thin orange line is the digital twin's simulated path, ending at the big
-orange "Orion is here" dot (the latest simulated tick). The star marks the farthest
-point from Earth in the real data, which is the lunar flyby. The numbers above the map
-change on every refresh, since a few km per update is too small to see on the map.
+    "health.battery": """
+**What:** How full the battery is (state of charge, %), from our power model.
 
-**How:** "Top-down (2D)" looks down on Earth's North Pole (the X-Y plane); "3D" can be
-rotated with the mouse. Zoom with the scroll wheel or by dragging a box; double-click
-to reset. Hover any point for its time, distance from Earth and speed. Positions come
-from `/orion` (NASA/JPL ground truth) and `/telemetry/synthetic/state` (the physics
-replay). The simulated line interpolates NASA's own planning OEM arcs, so a faithful
-model stays inside the blue band.
+**How to read it:** The dashed lines are the limits from the power data contract: below
+20 % the spacecraft goes into low-power mode, below 10 % it is critical. In shadow (grey
+bands) there's no sunlight, so the battery alone powers the spacecraft. The battery size
+is a labelled model assumption; NASA doesn't publish Orion's battery specification.
 
-**Why:** The whole twin's premise: synthetic vs reality on one plot — divergence between
-the lines *is* model error. Watch the lunar-distance excursion grow toward flyby day.
+**Why it matters:** The battery keeps Orion alive whenever it can't see the Sun.
 """,
-    "trajectory.compare": """
-**What:** Position components, velocity components, Earth range and speed — real vs
-synthetic overlaid per-axis, with residual curves (real − synthetic) underneath.
+    "health.power": """
+**What:** Power produced by the four solar-panel wings (orange) and power used by the
+spacecraft's systems (grey dashed), in kilowatts.
 
-**How:** Same colors per quantity (cyan X, red Y, teal Z); dashed = synthetic. The
-residual panels should stay near zero; any drift is a bug in interpolation or frames.
+**How to read it:** Orange above grey: spare power charges the battery. Orange below grey:
+the battery covers the shortfall. In shadow the orange line drops to zero. The power used
+is a fixed placeholder profile (1.2 kW) until a detailed load model exists.
 
-**Why:** Component-wise comparison exposes frame/time-tag errors that a scalar range
-plot would hide — e.g. a TDB/UT time-tag offset (~69 s) or ecliptic vs equatorial axes,
-both documented as Horizons gotchas in CLAUDE.md. With both handled in the ingest, a
-healthy twin stays within a few km of the real track.
+**Known limitations:** the simulator's Sun direction is still approximate (issue #36),
+which affects how much sunlight the panels get and when shadow happens.
+
+**Why it matters:** This balance decides whether the battery fills up or runs down.
 """,
-    "trajectory.residuals": """
-**What:** Statistics (mean, std, max) of each residual component over the merged window.
+    "environment.particles": """
+**What:** The top chart is the flux of high-energy protons (≥10 MeV) from the Sun,
+measured by NOAA's GOES satellites near Earth, via NASA iSWA. The strip below marks solar
+events recorded by NASA's DONKI database: eruptions (CMEs), flares, storms. The light blue
+background is the time Orion was flying.
 
-**How:** Residuals are computed on timestamps matched within 30 s of each other (real is
-4-min cadence, synthetic 1 Hz). Until the replay clock reaches the real arc's start the
-numbers read "no overlap yet".
+**How to read it:** The scale is logarithmic: each step up is 10× more particles. The
+coloured bands are NOAA's solar radiation storm levels, defined on exactly this
+measurement: 10 particle-flux units (pfu) is a minor storm (S1), 100 is moderate (S2),
+1000 is strong (S3). Hover a diamond for the event's details.
 
-**Why:** One number answers "is the twin drifting?" — a growing mean X-residual typically
-means ephemeris mismatch; growing std means timing jitter.
+**Why it matters:** Solar particle storms are the main radiation danger for astronauts
+beyond Earth's magnetic shield. A storm during the flight would be the radiation story of
+the mission.
 """,
-    "trajectory.solar": """
-**What:** Solar flux at the spacecraft (W/m²), sun-incidence angle on the array face,
-and eclipse state (SUNLIT / PENUMBRA / UMBRA).
+    "environment.contact_now": """
+**What:** Whether each of NASA's three Deep Space Network sites (Goldstone in California,
+Madrid in Spain, Canberra in Australia) could see Orion at the current moment of the
+simulation.
 
-**How:** Flux follows the inverse-square law from 1361 W/m² at 1 AU; the incidence angle
-drives both array power and hot-face heating. Eclipse steps down to 0 flux in UMBRA.
+**How to read it:** "Can reach Orion" means Orion was at least 10° above that site's
+horizon. That cutoff is a model assumption chosen in this project (low over the horizon
+the signal passes through more air), not an official DSN rule. The positions are real
+geometry from JPL Horizons, in hourly steps.
 
-**Why:** Every thermal and power event in this simulation is downstream of these three
-curves — the 64-min HEO Earth eclipse and the ~1 h lunar flyby eclipse are the mission's
-cold-soak stories.
+**Why it matters:** The three sites are spread around the globe so that, as Earth turns,
+at least one of them can usually talk to the spacecraft.
 """,
-    # ---- Thermal page ----
-    "thermal.temps": """
-**What:** The three model nodes in °C: sun-facing exterior panel, shadow-facing
-radiator, and the electronics bay.
+    "environment.windows": """
+**What:** For each antenna site, the stretches of time when it could reach Orion
+(coloured bars), during the selected time range.
 
-**How:** Dashed lines mark the contract-02 bands: bay cold-survival 249 K (−24 °C) and
-hot limit 310 K (37 °C). The exterior faces can safely swing much wider than the bay.
+**How to read it:** Bars from different sites take turns as Earth rotates. Red bands mark
+times when no site could reach Orion, which is when the spacecraft would have to store its
+data until contact returns. The orange line is the current moment. Hourly data, so bar
+edges are accurate to about an hour.
 
-**Why:** The bay holds avionics and batteries — the mission-critical node. Exterior
-nodes swing through eclipse; the bay should stay in band via insulation + heater. If it
-doesn't, the survival heater story (below) becomes visible.
+**Why it matters:** It shows how continuous contact with the crew was.
 """,
-    "thermal.flows": """
-**What:** Heat flows (W): absorbed sunlight, radiated loss, internal avionics heat
-(coupled from the power model), heater input — plus the net balance (in − out).
+    "accuracy.separation": """
+**What:** At each hour where both exist, the straight-line distance between where our
+simulation puts Orion and where NASA/JPL says Orion really was.
 
-**How:** Energy balance closes when the curves mirror each other: Q_absorbed + Q_internal
-≈ Q_radiated at steady state. Net ≈ 0 means equilibrium; large positive = warming.
+**How it's computed:** Real positions are JPL Horizons vectors (hourly, Earth mean
+equator J2000 / EME2000, UT). Each is paired with the simulated tick (1 Hz, EME2000, UTC)
+nearest in time, within 30 s. The simulation interpolates NASA's own OEM trajectory files,
+so a correct pipeline should stay within a few km. A sudden jump usually means a frame or
+time-stamp mismatch (both documented as Horizons gotchas in CLAUDE.md) rather than physics.
 
-**Why:** This is the contract's conservation rule made visible — a model bug that breaks
-energy bookkeeping shows up here as an imbalance before it shows in temperatures.
-""",
-    "thermal.heater": """
-**What:** Survival-heater ON/OFF events over the bay temperature trace.
-
-**How:** Contract hysteresis: heater turns on below 268 K (−5 °C), off above 270 K.
-Red shading marks active periods.
-
-**Why:** Heater duty cycle is the cheapest "how cold is the mission?" proxy. In the
-HEO eclipse and lunar-flyby shadow you should see it hold the bay above the setpoint —
-that's its whole job.
-""",
-    "thermal.eclipse": """
-**What:** Shadow-face temperature against eclipse state, and the eclipse mix over the
-window.
-
-**How:** In UMBRA, `q_solar` drops to zero and the shadow face free-cools toward the
-deep-space sink (~3 K). Recovery after umbra ends validates the model's time constants.
-
-**Why:** Eclipse thermal behavior decides battery survival during the mission's two
-night-side passes — this page is where cold-soak becomes visible.
-""",
-    # ---- Power page ----
-    "power.balance": """
-**What:** Solar array generation vs total spacecraft load vs net power (generation −
-load), W.
-
-**How:** Net > 0 charges the battery, net < 0 discharges it (contract sign convention).
-In UMBRA the array line dives to zero (no sunlight = no generation, physics ceiling at
-≈17.1 kW face-on at 1 AU, design rating 11.2 kW).
-
-**Why:** This is the power system's whole story in one chart — eclipses show up as
-demand fed by the battery alone.
-""",
-    "power.battery": """
-**What:** Battery SOC (%), bus voltage (V) and current (A) with charge/discharge sign.
-
-**How:** SOC is contract-hard-limited to 0–100 %. Colored bands mark contract states:
-NOMINAL > 20 %, LOW_POWER 10–20 %, CRITICAL ≤ 10 %. Current follows I = P/V on the
-28 V nominal bus — both battery numbers are explicitly labeled model assumptions
-(no public Orion battery spec).
-
-**Why:** SOC is the mission's fuel gauge — the battery covers every eclipse; a
-discharge slope you can't explain means a load is modeled wrong.
-""",
-    "power.available": """
-**What:** Available power headroom (W) and the distribution of power states.
-
-**How:** Headroom is what remains above essential loads for non-essential consumers
-like the comms transmitter; negative would violate the contract (state → CRITICAL).
-
-**Why:** This is the answer to "can we still transmit / run experiments right now?"
-""",
-    "power.efficiency": """
-**What:** Effective array efficiency and its degradation factor over time.
-
-**How:** Contract 03: η_eff = η_BOL × temperature derating × radiation damage; radiation
-degradation only moves non-increasingly once the radiation model lands (placeholder now).
-
-**Why:** Separates recoverable effects (angle, temperature) from permanent aging
-(radiation) — the basis for long-mission power trends.
-""",
-    # ---- Space weather page ----
-    "weather.goes": """
-**What:** Real GOES integral proton flux channels (P1…P500, pfu) on a log scale —
-the actual space-radiation environment measured in Earth orbit.
-
-**How:** Log y-axis is essential: channels span orders of magnitude. The NOAA S1 storm
-threshold is 10 pfu on the ≥10 MeV channel — contract's `sep_event_active` flag derives
-from exactly that.
-
-**Why:** This is ground truth for the radiation model: when flux crosses S1, the twin
-should flag an SEP event and comms should degrade — the dashboard cross-checks that
-join literally.
-""",
-    "weather.donki": """
-**What:** NASA DONKI space-weather events (CME, SEP, solar flares, geomagnetic storms)
-as a table and type histogram.
-
-**How:** Each row carries start/end/event time and the full payload; the histogram shows
-the mission window's event mix.
-
-**Why:** DONKI explains *why* GOES spiked — an SEP event on Apr 7-8 near flyby would be
-the mission-relevant radiation story, visible here before the model ingests it.
-""",
-    "weather.combined": """
-**What:** GOES P1 flux with DONKI event markers on one timeline.
-
-**How:** Vertical lines at event times; the proton trace validates that flagged events
-actually carry particles.
-
-**Why:** Single view connecting cause (solar events) to effect (proton flux at Earth) —
-the operational context driving the twin's radiation and comms placeholders.
-""",
-    # ---- DSN coverage page ----
-    "dsn.current": """
-**What:** Which DSN complexes (Goldstone, Canberra, Madrid) currently *see* Orion from
-the real JPL Horizons observer geometry.
-
-**How:** A pass = elevation ≥ 10° above the local horizon (configurable model
-assumption; not a universal DSN rule).
-
-**Why:** Contact windows drive comms data rate and anomaly-alert latency — if no site
-is up, the link margin on Overview should drop to NO_LINK.
-""",
-    "dsn.elevation": """
-**What:** Elevation angle of Orion over time per site/antenna.
-
-**How:** Curves rising above 10° are passes; 90° = directly overhead. Comparing across
-sites shows the handover pattern between complexes.
-
-**Why:** Elevation margin above the mask sets real link quality — deeper into view means
-lower atmospheric loss on the S-band link.
-""",
-    "dsn.polar": """
-**What:** Polar sky plots (azimuth × elevation) of Orion's track seen from each
-70 m-class DSN site.
-
-**How:** Read like a star chart: center = zenith (90° el), outer ring = horizon. The
-colored arcs are passes along UTC.
-
-**Why:** The classic way antenna operators visualize a track — immediately shows whether
-a pass skirts the horizon (bad, lossy) or culminates high (healthy).
-""",
-    "dsn.range": """
-**What:** Earth–spacecraft range and range-rate per site.
-
-**How:** Range grows to ~413,000 km at the lunar flyby and collapses at entry;
-range-rate inflection marks flyby. FSPL scales with log-distance, so range is the
-primary driver of link margin loss through the mission.
-
-**Why:** Antenna pointing angles aside, *this* is what makes flyby comms hard.
-""",
-    "dsn.windows": """
-**What:** Continuous visibility windows (pass intervals) per complex as a Gantt strip.
-
-**How:** Each bar = one uninterrupted pass; combined bars give total mission coverage.
-
-**Why:** Scheduling answers "when can we send commands / when must data buffer?" — the
-DSN handover gaps should match the comms model's NO_LINK periods.
+**Why it matters:** Every other simulated number (sunlight, temperature, power) is built on
+top of this trajectory, so it has to be right first.
 """,
 }
 
 
 def explain(key: str) -> None:
-    """Render the "About this visualization" expander for a chart key."""
+    """Render a chart's data-source badges, its one-line summary, and the
+    "About this chart" expander."""
+    sources = SOURCES.get(key)
+    summary = SUMMARIES.get(key)
+    if sources or summary:
+        st.markdown(" ".join(p for p in (data_badge(*(sources or ())), summary) if p))
     text = EXPLAINERS.get(key)
-    if not text:
-        return
-    with st.expander("About this visualization"):
-        st.markdown(text)
+    if text:
+        with st.expander("About this chart"):
+            st.markdown(text)
