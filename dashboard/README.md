@@ -16,16 +16,31 @@ Consumes the FastAPI backend (`packages/backend`, `http://localhost:8000`) throu
 the client in `data/backend_api.py`, which returns the `contracts` Pydantic models.
 It does not query the database directly.
 
-| Page | Synthetic data | Real data alongside |
-|------|----------------|---------------------|
-| Overview / Health | latest telemetry packet | - |
-| Trajectory | state engine trajectory | JPL Horizons Orion trajectory (residuals) |
-| Thermal | thermal model | - |
-| Power | power model | - |
-| Space Weather | - | GOES protons, DONKI events, DSN geometry |
-| DSN Coverage | - | DSN site geometry |
+Written for non-experts first: four pages, each answering one question, with
+one shared sidebar (a **Live** toggle, or a mission-time slider when Live is off).
 
-Comms, radiation and packet values are still placeholders from the physics models.
+| Page | Question it answers | Synthetic data | Real data |
+|------|---------------------|----------------|-----------|
+| Mission | Where is Orion, and is it OK? | trajectory, thermal/power state | JPL Horizons Orion trajectory |
+| Spacecraft health | Is it warm enough, and does it have power? | thermal, power, eclipse | - |
+| Space environment | What is space around it like; can we talk to it? | - | GOES protons, DONKI events, DSN geometry |
+| Model accuracy (for engineers) | Does the simulation match reality? | trajectory | JPL Horizons Orion trajectory |
+
+Comms and radiation are not simulated yet (fixed placeholders in `physics_models`), so
+the Mission page shows them as grey "Not simulated yet" tiles instead of a status.
+
+Every chart carries data-source badges (**Real** / **Synthetic** / **Placeholder**),
+a one-line plain-language summary and an "About this chart" expander. All three
+live in `pages/_explain.py` (`SOURCES`, `SUMMARIES`, `EXPLAINERS`), keyed by the
+name passed to `explain("<page>.<chart>")`; unit tests fail if a page uses a key
+that is missing there, or if text exists for a chart no page shows.
+
+Shared helpers (`pages/_*.py`): `_controls` (sidebar, mission constants),
+`_data` (cached fetches that page through the backend's 1,000-row limit),
+`_trajectory` (map, readout, real-vs-simulated separation), `_timeline`
+(shading intervals, line breaks at replay jumps), `_status` (plain-language
+states), `_live` (refresh interval, current producer run).
+
 Design notes: `docs/architecture/DASHBOARD_V1_DESIGN.md`.
 
 ### Run

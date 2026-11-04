@@ -13,17 +13,6 @@ REFRESH_INTERVAL = "5s"
 CACHE_TTL_S = 2
 
 
-def live_toggle(key: str) -> bool:
-    """Sidebar toggle for live mode (on by default)."""
-    return st.toggle(
-        "Live (refresh every 5 s)",
-        value=True,
-        key=key,
-        help="Re-fetch the newest rows every 5 s. While live, the end date/time is "
-        "ignored so new replay data is never filtered out.",
-    )
-
-
 def current_run(items: list) -> list:
     """Keep the leading items that belong to the producer's current run.
 
