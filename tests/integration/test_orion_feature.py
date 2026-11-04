@@ -6,31 +6,38 @@ from pipelines.ingest.jpl_orion import (
     fetch_orion_ephemeris,
     upsert_orion_ephemeris,
 )
-from sqlalchemy import create_engine
-from streamlit_dashboard.data.orion import load_orion_ephemeris
+
+SKIP_REASON = "set RUN_ORION_TIMESCALE_INTEGRATION=1 to run against TimescaleDB"
+RUN = os.environ.get("RUN_ORION_TIMESCALE_INTEGRATION") == "1"
 
 
-@unittest.skipUnless(
-    os.environ.get("RUN_ORION_TIMESCALE_INTEGRATION") == "1",
-    "set RUN_ORION_TIMESCALE_INTEGRATION=1 to run against TimescaleDB",
-)
-class OrionPipelineIntegrationTests(unittest.TestCase):
+class _OrionDatabaseTestCase(unittest.TestCase):
+    """Opens one pipelines connection and makes sure the Orion table exists."""
+
     @classmethod
     def setUpClass(cls):
         from pipelines.db import get_connection
-        from streamlit_dashboard.data.engine import get_database_url
 
         cls.connection = get_connection()
-        cls.engine = create_engine(
-            get_database_url().replace("postgresql://", "postgresql+psycopg://", 1)
-        )
         ensure_orion_ephemeris_table(cls.connection)
 
     @classmethod
     def tearDownClass(cls):
         cls.connection.close()
-        cls.engine.dispose()
 
+    def read_orion_rows(self, target_id: str = "-1024") -> list[tuple]:
+        """(target_id, epoch, speed_kms) rows in epoch order, as the backend serves them."""
+        with self.connection.cursor() as cur:
+            cur.execute(
+                "SELECT target_id, epoch, speed_kms FROM orion_ephemeris"
+                " WHERE target_id = %s ORDER BY epoch",
+                (target_id,),
+            )
+            return cur.fetchall()
+
+
+@unittest.skipUnless(RUN, SKIP_REASON)
+class OrionPipelineIntegrationTests(_OrionDatabaseTestCase):
     def test_jpl_fetch_returns_orion_records(self):
         records = fetch_orion_ephemeris()
         self.assertTrue(records, "JPL Horizons returned no Orion ephemeris records")
@@ -40,47 +47,21 @@ class OrionPipelineIntegrationTests(unittest.TestCase):
         self.assertEqual(upsert_orion_ephemeris(self.connection, records), len(records))
 
 
-@unittest.skipUnless(
-    os.environ.get("RUN_ORION_TIMESCALE_INTEGRATION") == "1",
-    "set RUN_ORION_TIMESCALE_INTEGRATION=1 to run against TimescaleDB",
-)
-class OrionTimescaleIntegrationTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        from pipelines.db import get_connection
-        from streamlit_dashboard.data.engine import get_database_url
-
-        cls.connection = get_connection()
-        cls.engine = create_engine(
-            get_database_url().replace("postgresql://", "postgresql+psycopg://", 1)
-        )
-        ensure_orion_ephemeris_table(cls.connection)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.connection.close()
-        cls.engine.dispose()
-
+@unittest.skipUnless(RUN, SKIP_REASON)
+class OrionTimescaleIntegrationTests(_OrionDatabaseTestCase):
     def test_real_records_are_persisted(self):
-        result = load_orion_ephemeris(
-            self.engine,
-        )
+        rows = self.read_orion_rows()
 
-        self.assertTrue(
-            len(result),
-            "TimescaleDB contains no Orion records; run the pipeline test first",
-        )
-        self.assertEqual(set(result["target_id"]), {"-1024"})
+        self.assertTrue(rows, "TimescaleDB contains no Orion records; run the pipeline test first")
+        self.assertEqual({row[0] for row in rows}, {"-1024"})
 
-    def test_dashboard_reads_filtered_ordered_real_records(self):
-        result = load_orion_ephemeris(self.engine, target_id="-1024")
+    def test_stored_records_are_ordered_and_complete(self):
+        rows = self.read_orion_rows()
 
-        self.assertTrue(
-            len(result),
-            "TimescaleDB contains no Orion records; run the pipeline test first",
-        )
-        self.assertTrue(result["epoch"].is_monotonic_increasing)
-        self.assertTrue(result["speed_kms"].notna().all())
+        self.assertTrue(rows, "TimescaleDB contains no Orion records; run the pipeline test first")
+        epochs = [row[1] for row in rows]
+        self.assertEqual(epochs, sorted(epochs))
+        self.assertTrue(all(row[2] is not None for row in rows))
 
 
 if __name__ == "__main__":

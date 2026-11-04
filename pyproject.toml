@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 dependencies = []
 
 [tool.uv.workspace]
-members = ["packages/*"]
+members = ["packages/*", "dashboard"]
 
 [tool.uv]
 package = false

@@ -7,8 +7,9 @@
 
 **Date:** 2026-10-19
 **Location:** `dashboard/src/prototype/` (Streamlit + Plotly)
-**Scope:** the *Digital Twin* dashboard. `packages/streamlit_dashboard/` is a separate,
-internal pipeline-explorer for real JPL/NASA data — **do not extend it**.
+**Scope:** the *Digital Twin* dashboard, now the project's only dashboard (the separate
+real-data pipeline explorer, `packages/streamlit_dashboard/`, was retired in #32 - see
+`docs/decisions/ONE_DASHBOARD.md`).
 Superset is removed from the plan. Production "Mission Control" JS comes later (see
 `DASHBOARD_ARCHITECTURE.md` §5); v1 is Streamlit.
 

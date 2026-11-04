@@ -77,6 +77,12 @@ def _contact_now(dsn: pd.DataFrame, now: datetime) -> None:
     at = at[at["epoch"] == at["epoch"].max()]
     data_hour = at["epoch"].iloc[0]
     st.caption(f"At {now:%b %d, %H:%M} UTC, using the hourly NASA/JPL positions from {data_hour:%H:%M} UTC.")
+    # One-way light time from Horizons; the three sites differ by milliseconds.
+    delay_s = at["light_time_s"].dropna()
+    if not delay_s.empty:
+        one_way = float(delay_s.mean())
+        st.markdown(f"A radio signal takes **{one_way:.1f} s** to reach Orion, "
+                    f"so a question and its answer take **{2 * one_way:.1f} s**.")
     cols = st.columns(len(COMPLEXES))
     for col, (name, where) in zip(cols, COMPLEXES.items(), strict=True):
         row = at[at["complex"] == name]

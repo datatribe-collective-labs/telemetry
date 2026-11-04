@@ -78,8 +78,8 @@ docker compose up -d --build --force-recreate physics_models_consumer
 # 4. Backend API (host, port 8000)
 uv run --package backend python -m backend.main
 
-# 5. Streamlit Dashboard (host, port 8501)
-uv run --package streamlit_dashboard streamlit run dashboard/src/prototype/app.py
+# 5. Digital Twin dashboard (host, port 8501)
+uv run --package dashboard streamlit run dashboard/src/prototype/app.py
 ```
 
 ## ✅ Verified Working

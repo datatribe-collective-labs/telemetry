@@ -20,19 +20,20 @@ TimescaleDB; `packages/backend` is a working FastAPI with 28 REST endpoints; and
 Superset was dropped - the dashboard strategy is Streamlit now, Vanilla JS +
 Plotly.js later (see `docs/architecture/DASHBOARD_ARCHITECTURE.md`).
 
-Effort #2 (the real data path: `packages/pipelines` + the Data Explorer in
-`packages/streamlit_dashboard`) is a working lightweight ETL + Streamlit app that
-ingests public NASA/JPL APIs into TimescaleDB - the proven small-scale version of
-the same ingest -> store -> visualize shape. See "Two efforts in this repo" below
-before assuming any two packages are meant to talk to each other.
+Effort #2 (the real data path: `packages/pipelines`) is a working lightweight
+batch ETL that ingests public NASA/JPL APIs into TimescaleDB - the proven
+small-scale version of the same ingest -> store -> visualize shape. Its data is
+served by the backend and shown on the Digital Twin dashboard. See "Two efforts in
+this repo" below before assuming any two packages are meant to talk to each other.
 
 Docs use one vocabulary for this split: **real data** (published by NASA/JPL:
 ingested tables + `data/oem/` files) vs **synthetic data** (simulated by
-`physics_models`; tables under `/telemetry/synthetic/*` in the API). The two
-dashboards are the **Data Explorer** (`packages/streamlit_dashboard`, real data
-only, reads the DB) and the **Digital Twin dashboard** (`dashboard/src/prototype`,
-synthetic data with real data alongside, reads the backend). Keep these names in
-new docs; the root `README.md` "Real data vs synthetic data" section is canonical.
+`physics_models`; tables under `/telemetry/synthetic/*` in the API). There is one
+dashboard, the **Digital Twin dashboard** (`dashboard/src/prototype`, synthetic data
+with real data alongside, reads the backend); every chart is badged Real / Synthetic /
+Placeholder. The earlier real-data-only **Data Explorer** (`packages/streamlit_dashboard`)
+was retired in #32 (`docs/decisions/ONE_DASHBOARD.md`) - don't recreate it. Keep these
+names in new docs; the root `README.md` "Real data vs synthetic data" section is canonical.
 
 ## Commands
 
@@ -52,7 +53,7 @@ Full service startup order (Docker + host `uv` services): see `RUN_SERVICES.md`.
 
 ```
 # install/sync a package's deps (creates .venv at repo root)
-uv sync --package <backend|pipelines|contracts|physics_models|streamlit_dashboard>
+uv sync --package <backend|pipelines|contracts|physics_models|dashboard>
 
 # bring up local infrastructure (TimescaleDB + Redpanda)
 docker compose up -d timescaledb redpanda
@@ -60,8 +61,8 @@ docker compose up -d timescaledb redpanda
 # run an ingest job (one module per source: jpl_cad, jpl_orion, jpl_dsn_geometry, donki, iswa_goes_protons)
 uv run --package pipelines python -m pipelines.ingest.jpl_cad
 
-# run the pipeline-explorer dashboard
-uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/src/streamlit_dashboard/app.py
+# run the Digital Twin dashboard (needs the backend: uv run --package backend python -m backend.main)
+uv run --package dashboard streamlit run dashboard/src/prototype/app.py
 
 # check ingested data without a local psql client
 docker compose exec timescaledb psql -U telemetry -d telemetry -c "SELECT count(*) FROM close_approaches;"
@@ -84,7 +85,9 @@ mirroring the source path:
 
 Unit tests exist for all pipeline ingest modules (`jpl_cad`, `donki`,
 `iswa_goes_protons`, `jpl_dsn_geometry`), plus `tests/unit/backend` (route and
-model tests) and `tests/unit/physics_models`.
+model tests), `tests/unit/physics_models` and `tests/unit/dashboard` (the
+Digital Twin dashboard's helpers; a test keeps `pages/_explain.py` in sync with the
+pages).
 
 ```
 # Docker test environment (compose service `tests`, profile "test")
@@ -121,22 +124,24 @@ on disk that breaks subsequent native Windows `uv run` with `Access is denied` o
    Kafka producer/consumer, `backend` REST API, `dashboard/src/prototype` Streamlit
    views. Comms/radiation/packet/anomaly generators remain placeholders
    (other contributors). `airflow/dags/` is empty scaffolding.
-2. **Real data path / Data Explorer** (`packages/pipelines`
-   - `packages/streamlit_dashboard`): a working, lightweight ETL + Streamlit app that
-     ingests public NASA/JPL data (JPL CAD, JPL Horizons for Orion and DSN geometry,
-     NASA DONKI, GOES proton flux via NASA iSWA, plus the local NASA OEM arcs and
-     mission timeline) into TimescaleDB and visualizes it. It was the first end-to-end functional path in the repo (effort #1 is now runnable too), and the
-     first step toward effort #1 - proving out the ingest -> store -> visualize pattern at
-     small scale. It intentionally does **not** depend on `contracts` or `backend` yet, and
-     has no formal ODCS contract - see the root `README.md` for the full architecture
-     diagram and rationale.
+2. **Real data path** (`packages/pipelines`): a working, lightweight batch ETL that
+   ingests public NASA/JPL data (JPL CAD, JPL Horizons for Orion, the Moon and DSN
+   geometry, NASA DONKI, GOES proton flux via NASA iSWA, plus the local NASA OEM arcs
+   and mission timeline) into TimescaleDB. It was the first end-to-end functional path
+   in the repo and the first step toward effort #1 - proving out the ingest -> store ->
+   visualize pattern at small scale. Its own Streamlit app (the Data Explorer) was
+   retired once the Digital Twin dashboard showed the same data through the backend.
+   `pipelines` still does **not** depend on `contracts` or `backend`, and has no formal
+   ODCS contract - see the root `README.md` for the architecture diagram.
 
-When asked to "add a data source" or "add a page," it almost always means effort #2.
+When asked to "add a data source," it means an ingest module plus a backend route
+and a Digital Twin dashboard chart (see below); "add a page" means a page in
+`dashboard/src/prototype/pages/`.
 
-## Architecture of the working pipeline (effort #2)
+## Architecture of the real data path (effort #2)
 
 ```
-public JSON API --> pipelines.ingest.<source> --> TimescaleDB --> streamlit_dashboard
+public JSON API --> pipelines.ingest.<source> --> TimescaleDB --> backend --> dashboard/src/prototype
 ```
 
 Horizons gotchas: VECTORS tables default to **TDB** time stamps (OBSERVER tables
@@ -152,23 +157,28 @@ header above `$$SOE`, not inside the data block.
   `pg_extension` check, dataclass for parsed records, `fetch_*`/`upsert_*`/`main()`).
   A new source is a new self-contained `pipelines/ingest/jpl_<source>.py` module,
   following that same shape - don't centralize per-source schema logic into `db.py`.
-- **`packages/streamlit_dashboard`** is a multi-page Streamlit app (`st.navigation`/
-  `st.Page`, requires `streamlit>=1.37`):
-  - `data/engine.py` - the one shared piece, a `@st.cache_resource`-cached
-    `get_engine()`.
-  - `data/<source>.py` - one `@st.cache_data`-cached query module per data source.
-  - `pages/<source>.py` - one page per data source (filters, table, chart).
-  - `app.py` - thin entrypoint only: `st.set_page_config` + registers pages in a
-    `st.Page(...)` list. `pages/welcome.py` is the landing page.
-  - Adding a source = one file in each of `pipelines/ingest/`, `data/`, `pages/`, plus
-    one line in `app.py`'s `pages` list, plus unit tests under
-    `tests/unit/pipelines/ingest/<source>/` (see "Tests" above).
-- Both `pipelines` and `streamlit_dashboard` are deliberately independent (no shared
-  import between them, each has its own environment-based connection handling) -
-  this mirrors the existing isolation between `backend` and `pipelines` (see the
-  Dockerfile comments in `packages/backend/Dockerfile` about not pulling in pipeline
-  deps). Don't "fix" this duplication by introducing a shared db/config package unless
-  asked.
+- **Backend** serves each real table at a top-level route: response model in
+  `packages/contracts/src/contracts/models.py`, ORM model in
+  `packages/backend/src/backend/models.py`, route in
+  `packages/backend/src/backend/api/routes/<source>.py` registered in
+  `backend/api/__init__.py`.
+- **`dashboard/src/prototype`** (the Digital Twin dashboard) is a multi-page Streamlit
+  app (`st.navigation`/`st.Page`). `dashboard/pyproject.toml` makes `dashboard` a
+  *virtual* `uv` workspace member: it only declares the app's deps and is not built,
+  so modules import each other as `dashboard.src.prototype...` from the repo root.
+  - `data/backend_api.py` - the one HTTP client (sync `httpx`, returns `contracts` models).
+  - `pages/_data.py` - `@st.cache_data` loaders; `fetch_all` pages past the backend's
+    1,000-row cap.
+  - `pages/_explain.py` - Real / Synthetic / Placeholder badge, summary and explainer
+    per chart; a unit test fails if a page and these dicts disagree.
+  - Adding a source = ingest module + backend model/route + client method + loader +
+    chart and `_explain.py` entries, plus unit tests under
+    `tests/unit/pipelines/ingest/<source>/` and `tests/unit/backend/`.
+- `pipelines` and `backend` are deliberately independent (no shared import between
+  them, each has its own environment-based connection handling; see the Dockerfile
+  comments in `packages/backend/Dockerfile` about not pulling in pipeline deps). The
+  dashboard never reads the DB directly. Don't "fix" this duplication by introducing a
+  shared db/config package unless asked.
 - Each package has its own `Dockerfile` where applicable (built from the **repo root**,
   e.g. `docker build -f packages/physics_models/Dockerfile .`, so `uv` can resolve the
   workspace). For local dev, the Docker stack is `timescaledb`, `redpanda`,

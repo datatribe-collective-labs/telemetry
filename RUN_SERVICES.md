@@ -3,8 +3,8 @@
 The project has two kinds of data: **real data** (published by NASA/JPL, ingested by
 `packages/pipelines` or read from `data/oem/`) and **synthetic data** (spacecraft
 telemetry simulated by `packages/physics_models`). See "Real data vs synthetic data"
-in the root `README.md`. Steps 0-1 are shared; steps 3 and 7B are the real data path;
-steps 2, 4-6 and 7A the synthetic data path.
+in the root `README.md`. Steps 0-1 are shared; step 3 is the real data path; steps 2 and 4-5 the
+synthetic data path; steps 6-7 (backend + dashboard) serve both.
 
 ## Prerequisites
 - Docker & Docker Compose
@@ -18,8 +18,7 @@ Run from the **repo root**.
 # Database credentials, read by Docker Compose and every host-side service
 cp .env.example .env   # then set POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB
 
-# One shared .venv with every workspace package (the Digital Twin dashboard needs
-# contracts + httpx + streamlit together, which no single package provides)
+# One shared .venv with every workspace package
 uv sync --all-packages
 ```
 
@@ -45,7 +44,8 @@ cd ../..
 ### 3. Real data — ingest jobs into TimescaleDB
 Run from the **repo root**. These populate the tables that the backend real-data endpoints serve.
 ```bash
-# NASA APIs: Orion and Moon ephemeris, DONKI events, GOES protons, DSN geometry, close approaches
+# NASA APIs: Orion and Moon ephemeris, DONKI events, GOES protons, DSN geometry,
+# close approaches (API only, not shown on the dashboard)
 uv run --package pipelines python -m pipelines.ingest.jpl_orion
 uv run --package pipelines python -m pipelines.ingest.jpl_moon
 uv run --package pipelines python -m pipelines.ingest.donki
@@ -99,29 +99,17 @@ curl "http://localhost:8000/dsn-geometry?limit=5"
 curl "http://localhost:8000/telemetry/synthetic/latest?limit=5"
 ```
 
-### 7. Dashboards (uv, run on host port 8501)
+### 7. Digital Twin dashboard (uv, runs on host port 8501)
 
-Run from the **repo root**.
-
-Two dashboards are available. Pick the one that matches what you want to see.
-Both use port 8501; to run them side by side, give the second one `--server.port 8502`.
-
-#### A) Digital Twin dashboard (prototype) — synthetic data, with real data alongside
-Source: `dashboard/src/prototype`. Consumes the backend REST API.
+Run from the **repo root**. Source: `dashboard/src/prototype`. Shows synthetic data
+with real data alongside, all read through the backend REST API (step 6 must be
+running). The earlier real-data-only Data Explorer was retired
+(`docs/decisions/ONE_DASHBOARD.md`).
 ```bash
-# Plain uv run (not a workspace package)
-uv run streamlit run dashboard/src/prototype/app.py --server.port 8501 --server.headless true
-```
+# `dashboard` is a virtual workspace member that only declares the dashboard's deps
+uv run --package dashboard streamlit run dashboard/src/prototype/app.py --server.port 8501 --server.headless true
 
-#### B) Data Explorer — real data only
-Source: `packages/streamlit_dashboard`. Queries the ingested tables in TimescaleDB directly (no backend needed).
-```bash
-# Workspace package, run via uv --package
-uv run --package streamlit_dashboard streamlit run packages/streamlit_dashboard/src/streamlit_dashboard/app.py --server.port 8501 --server.headless true
-```
-
-Verify (whichever you chose):
-```bash
+# Verify
 curl http://localhost:8501/_stcore/health
 # Open http://localhost:8501 in browser
 ```
@@ -129,7 +117,7 @@ curl http://localhost:8501/_stcore/health
 ## Key Points
 - **Never** `pip install` in system Python — use `uv run --package <pkg>` or Docker
 - Physics models run **inside Docker** (connects to `redpanda:9092`)
-- Backend & dashboards run **on host** via `uv` (connect to `localhost:8000`, `localhost:5433`)
+- Backend & dashboard run **on host** via `uv` (connect to `localhost:8000`, `localhost:5433`)
 - Kafka topics must exist before physics models start (auto-created by Redpanda)
 - TimescaleDB must be healthy before pipelines/physics_models start
 

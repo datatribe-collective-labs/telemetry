@@ -15,7 +15,7 @@ For *running* the services, see the root [`RUN_SERVICES.md`](../RUN_SERVICES.md)
 | Doc | Read this when… |
 |-----|-----------------|
 | [architecture/PHYSICS_MODELS_ARCHITECTURE.md](architecture/PHYSICS_MODELS_ARCHITECTURE.md) | You're working in `packages/physics_models/` — package layout, tick loop, cross-model coupling, Kafka producer design. **Note: this is the target architecture**; comms/radiation/packet/anomaly are not yet implemented (banner at top of file). |
-| [architecture/DASHBOARD_ARCHITECTURE.md](architecture/DASHBOARD_ARCHITECTURE.md) | You're building or changing dashboards — the Data Explorer (real data), the Digital Twin dashboard (synthetic + real) and the future JS "Mission Control", page designs, which backend endpoints feed which widgets. |
+| [architecture/DASHBOARD_ARCHITECTURE.md](architecture/DASHBOARD_ARCHITECTURE.md) | You're building or changing the dashboard — the Digital Twin dashboard (synthetic + real) and the future JS "Mission Control", page designs, which backend endpoints feed which widgets. |
 | [architecture/DASHBOARD_V1_DESIGN.md](architecture/DASHBOARD_V1_DESIGN.md) | You're building the **v1 Streamlit prototype** (`dashboard/src/prototype/`) — page-by-page plan, flyby visualization, data organization, build order. |
 
 ## Integration — *"Is the pipeline wired up correctly?"*
@@ -37,6 +37,7 @@ For *running* the services, see the root [`RUN_SERVICES.md`](../RUN_SERVICES.md)
 
 | Doc | Read this when… |
 |-----|-----------------|
+| [decisions/ONE_DASHBOARD.md](decisions/ONE_DASHBOARD.md) | You wonder why there is one dashboard, not a separate real-data Data Explorer, and what happened to its pages (#32). |
 | [decisions/SPARK_SCALE_REQUIREMENTS.md](decisions/SPARK_SCALE_REQUIREMENTS.md) | You're questioning whether/when Apache Spark is needed (Monte Carlo uncertainty quantification). |
 
 ## Other repo docs (not in this folder)
