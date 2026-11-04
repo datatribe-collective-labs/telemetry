@@ -30,7 +30,10 @@ def fetch_moon_ephemeris(start_dt: datetime, stop_dt: datetime) -> pd.DataFrame:
             location="500@399",
             epochs={"start": start_str, "stop": stop_str, "step": "1h"},
         )
-        vec = obj.vectors().to_pandas()
+        # refplane="earth" = Earth mean equator J2000 (EME2000), the axes
+        # orion_ephemeris uses; astroquery's default is the ecliptic, which would put
+        # the Moon 23.44 deg off Orion's flyby track.
+        vec = obj.vectors(refplane="earth").to_pandas()
         return pd.DataFrame(
             {
                 "epoch": pd.to_datetime(

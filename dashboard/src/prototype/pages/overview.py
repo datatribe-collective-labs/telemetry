@@ -153,7 +153,7 @@ def render_overview(date_from, date_to, limit):
             st.metric("Battery SOC", f"{latest.battery_soc_pct:.1f} %")
             st.metric("Bus Voltage", f"{latest.battery_voltage_v:.1f} V")
             st.metric("Array Power", f"{latest.solar_array_power_w:.0f} W")
-            st.caption(f"Available: {latest.solar_array_power_w:.0f} W")
+            st.caption("Available headroom: see the Power page")
     
         # Comms card
         with col_comms:
@@ -207,8 +207,9 @@ def render_overview(date_from, date_to, limit):
                 fig.add_trace(go.Scatter(x=df["timestamp_utc"], y=df["temp_sun_face_C"], name="Sun Face", line={"color": "#FF6B6B"}))
                 fig.add_trace(go.Scatter(x=df["timestamp_utc"], y=df["temp_shadow_face_C"], name="Shadow Face", line={"color": "#4ECDC4"}))
                 fig.update_layout(title="Temperatures (°C)", height=250, margin={"l": 0, "r": 0, "t": 30, "b": 0}, legend={"orientation": "h", "y": -0.2})
-                fig.add_hline(y=10, line_dash="dash", line_color="blue", annotation_text="Cold Limit")
-                fig.add_hline(y=37, line_dash="dash", line_color="red", annotation_text="Hot Limit")
+                # Contract 02 electronics-bay bands (same as the Thermal page).
+                fig.add_hline(y=-24.15, line_dash="dash", line_color="blue", annotation_text="Bay cold survival (249 K / −24 °C)")
+                fig.add_hline(y=36.85, line_dash="dash", line_color="red", annotation_text="Bay hot limit (310 K / 37 °C)")
                 plot(fig)
         
             with c2:
