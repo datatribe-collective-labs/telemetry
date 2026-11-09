@@ -111,7 +111,7 @@ uv run --package dashboard streamlit run dashboard/src/prototype/app.py
 | WebSocket endpoints (`/ws/live`, `/ws/events`) | Backend | Not implemented |
 | OEM loader + wiring of state/thermal/power into runner | - | ✅ Done (2026-10-19) |
 | Timeline events fact-check vs PDF | - | Pending — `mission_events` is DRAFT |
-| Real data ingestion pipelines | — | Exist in this repo (`packages/pipelines`); run manually, not part of docker stack |
+| Real data ingestion pipelines | — | ✅ `packages/pipelines`; run natively with `uv run`, or scheduled by Airflow in Docker (compose profile `airflow`, `airflow/dags/`) |
 
 ## 🧪 Quick Verification Commands
 

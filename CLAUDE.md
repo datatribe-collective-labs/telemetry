@@ -87,7 +87,8 @@ Unit tests exist for all pipeline ingest modules (`jpl_cad`, `donki`,
 `iswa_goes_protons`, `jpl_dsn_geometry`), plus `tests/unit/backend` (route and
 model tests), `tests/unit/physics_models` and `tests/unit/dashboard` (the
 Digital Twin dashboard's helpers; a test keeps `pages/_explain.py` in sync with the
-pages).
+pages) and `tests/unit/airflow` (the DAG source lists, natively; the DAGs themselves
+only in the `airflow-tests` container).
 
 ```
 # Docker test environment (compose service `tests`, profile "test")
@@ -123,7 +124,7 @@ on disk that breaks subsequent native Windows `uv run` with `Access is denied` o
    `contracts` Pydantic models, `physics_models` state/thermal/power generators +
    Kafka producer/consumer, `backend` REST API, `dashboard/src/prototype` Streamlit
    views. Comms/radiation/packet/anomaly generators remain placeholders
-   (other contributors). `airflow/dags/` is empty scaffolding.
+   (other contributors).
 2. **Real data path** (`packages/pipelines`): a working, lightweight batch ETL that
    ingests public NASA/JPL data (JPL CAD, JPL Horizons for Orion, the Moon and DSN
    geometry, NASA DONKI, GOES proton flux via NASA iSWA, plus the local NASA OEM arcs
@@ -131,8 +132,15 @@ on disk that breaks subsequent native Windows `uv run` with `Access is denied` o
    in the repo and the first step toward effort #1 - proving out the ingest -> store ->
    visualize pattern at small scale. Its own Streamlit app (the Data Explorer) was
    retired once the Digital Twin dashboard showed the same data through the backend.
-   `pipelines` still does **not** depend on `contracts` or `backend`, and has no formal
-   ODCS contract - see the root `README.md` for the architecture diagram.
+   `pipelines` depends on `contracts` (only for `contracts.planned_attitude`, the
+   mission timeline) but **not** on `backend`, and has no formal ODCS contract - see
+   the root `README.md` for the architecture diagram. Airflow (`airflow/`, compose
+   profile `airflow`) schedules the ingest jobs: `real_data_backfill` (manual, every
+   source) and `real_data_refresh` (daily). The source lists live in
+   `airflow/dags/real_data_sources.py`; a new ingest module must be added there (a unit
+   test fails otherwise). Each task runs `python -m pipelines.ingest.<source>` with a
+   separate `pipelines` venv baked into the image (not Airflow's env), one at a time via
+   the one-slot `real_data_ingest` pool (JPL fair use).
 
 When asked to "add a data source," it means an ingest module plus a backend route
 and a Digital Twin dashboard chart (see below); "add a page" means a page in
@@ -171,7 +179,8 @@ header above `$$SOE`, not inside the data block.
     1,000-row cap.
   - `pages/_explain.py` - Real / Synthetic / Placeholder badge, summary and explainer
     per chart; a unit test fails if a page and these dicts disagree.
-  - Adding a source = ingest module + backend model/route + client method + loader +
+  - Adding a source = ingest module + its entry in `airflow/dags/real_data_sources.py`
+    + backend model/route + client method + loader +
     chart and `_explain.py` entries, plus unit tests under
     `tests/unit/pipelines/ingest/<source>/` and `tests/unit/backend/`.
 - `pipelines` and `backend` are deliberately independent (no shared import between
@@ -185,9 +194,13 @@ header above `$$SOE`, not inside the data block.
   `redpanda`, `migrate` (one-shot `alembic upgrade head`; the consumer and backend wait
   for it), `physics_models`, `physics_models_consumer`, `backend` and `dashboard`
   (`dashboard/Dockerfile`; it finds the backend via `BACKEND_URL`, default
-  `http://localhost:8000`). The `tests`/`orion-tests` services are in the `test`
-  profile. For code changes the backend and dashboard can still run natively via
-  `uv run` (`BACKEND_RELOAD=1` turns on uvicorn reload; see `RUN_SERVICES.md`). `packages/pipelines/Dockerfile` installs no JDK -
+  `http://localhost:8000`). The Airflow services (`airflow-init`, `-apiserver` on
+  `127.0.0.1:8080`, `-scheduler`, `-dag-processor`; metadata in an `airflow` database on
+  the same TimescaleDB; FAB auth manager, user `admin`) are in the `airflow` profile.
+  The `tests`/`orion-tests`/`airflow-tests` services are in the `test` profile; the DAG
+  tests need Airflow, which doesn't run on native Windows, so they skip natively and run
+  via `docker compose run --rm --build airflow-tests`. For code changes the backend and
+  dashboard can still run natively via `uv run` (`BACKEND_RELOAD=1` turns on uvicorn reload; see `RUN_SERVICES.md`). `packages/pipelines/Dockerfile` installs no JDK -
   the `pipelines` package has no PySpark dependency; if one is reintroduced,
   target Spark 4.x (Java 17/21/25) and use `openjdk-21-jre-headless` -
   openjdk-17 no longer exists on the `python:3.12-slim`/Debian trixie base.

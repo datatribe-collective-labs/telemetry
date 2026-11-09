@@ -9,14 +9,13 @@
 # Not needed by any Docker image
 docs/
 superset/
-airflow/
 tests/
 .github/
 *.md
 COMMIT_PLAN.md
 CLAUDE.md
 
-# Data ignored, except the OEM zip explicitly copied by the physics_models image
+# Data ignored, except the OEM zip copied by the physics_models and airflow images
 data/
 !data/oem/
 !data/oem/all-artemis-ii-oem-files.zip
