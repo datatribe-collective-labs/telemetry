@@ -10,6 +10,7 @@ publish (**real data**).
 ```mermaid
 flowchart LR
     NASA["NASA / JPL - real data"]
+    Airflow["Airflow - schedules the ingest jobs"]
     Ingest["Ingest jobs"]
     Physics["Physics models - synthetic data"]
     Kafka["Redpanda - Kafka"]
@@ -17,6 +18,7 @@ flowchart LR
     API["Backend API"]
     Twin["Digital Twin dashboard"]
 
+    Airflow -- backfill on demand, refresh daily --> Ingest
     NASA --> Ingest
     Ingest --> DB
     NASA -- OEM trajectory --> Physics
@@ -25,6 +27,10 @@ flowchart LR
     DB --> API
     API --> Twin
 ```
+
+The ingest jobs can also be run by hand with `uv run`; Airflow is opt-in (compose
+profile `airflow`) and keeps its own metadata in a separate `airflow` database on the
+same TimescaleDB.
 
 ## Quick start: run the dashboard
 
@@ -48,7 +54,9 @@ uv run --package pipelines python -m pipelines.ingest.jpl_dsn_geometry
 uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons
 uv run --package pipelines python -m pipelines.ingest.donki
 uv run --package pipelines python -m pipelines.ingest.mission_events  # mission phases (draft)
-#    ...or all of them through Airflow (UI http://localhost:8080, user admin):
+#    ...or all of them through Airflow, which then also refreshes DONKI, GOES and
+#    CAD daily (UI http://localhost:8080, user admin, password AIRFLOW_ADMIN_PASSWORD
+#    from .env, default "admin"):
 docker compose --profile airflow up -d --build
 docker compose exec airflow-scheduler airflow dags trigger real_data_backfill
 
@@ -151,14 +159,16 @@ at top-level routes (`/orion`, `/donki`, ...) and synthetic data under
   (Kafka on `:9092`), `migrate` (one-shot `alembic upgrade head`, which the
   consumer and backend wait for), `physics_models` (producer),
   `physics_models_consumer`, the backend API (`:8000`) and the dashboard
-  (`:8501`), plus the on-demand `tests` service (see "Tests" below).
+  (`:8501`), plus the on-demand `tests`, `orion-tests` and `airflow-tests` services
+  (profile `test`, see "Tests" below).
 - **Airflow, in Docker, opt-in** (`docker compose --profile airflow up -d`): runs the
   ingest jobs as DAGs, `real_data_backfill` (manual, every source) and
   `real_data_refresh` (daily), one job at a time. UI on `127.0.0.1:8080` only. See
   `RUN_SERVICES.md` step 3.
 - **Natively via `uv run`**: the ingest jobs, when not using Airflow. They talk to the
-  Dockerized database over `localhost:5433`. The backend and dashboard can also run natively while you
-  work on their code (stop their containers first; see `RUN_SERVICES.md`).
+  Dockerized database over `localhost:5433`. The backend and dashboard can also run
+  natively while you work on their code (stop their containers first; see
+  `RUN_SERVICES.md`).
 
 ## How to run
 
@@ -172,8 +182,12 @@ cp .env.example .env        # then set POSTGRES_USER / POSTGRES_PASSWORD / POSTG
 uv sync --all-packages      # one shared .venv with every workspace package
 ```
 
-`.env` is read by Docker Compose, the ingest jobs and the backend. `DATABASE_URL` is optional; without it, host-side tools connect to
-`localhost:5433` using the three `POSTGRES_*` values.
+`.env` is read by Docker Compose, the native ingest jobs and the backend.
+`DATABASE_URL` is optional; without it, host-side tools connect to `localhost:5433`
+using the three `POSTGRES_*` values. Containers, Airflow's ingest tasks included, get
+their `DATABASE_URL` (`timescaledb:5432`) from `docker-compose.yml`. For Airflow, `.env`
+can also set `AIRFLOW_ADMIN_PASSWORD` and `AIRFLOW_JWT_SECRET` (see `.env.example`;
+the defaults are for local use only).
 
 ### Everything
 
@@ -203,6 +217,14 @@ uv run --package pipelines python -m pipelines.ingest.mission_events
 uv run --package pipelines python -m pipelines.ingest.jpl_cad   # optional: API only
 ```
 
+Or let Airflow load it. This starts the dashboard and Airflow, still without Redpanda
+or the physics models, then runs every ingest job (including `jpl_cad`):
+
+```bash
+docker compose --profile airflow up -d --build dashboard airflow-scheduler airflow-dag-processor
+docker compose exec airflow-scheduler airflow dags trigger real_data_backfill
+```
+
 ### Ingest options
 
 ```bash
@@ -211,7 +233,9 @@ uv run --package pipelines python -m pipelines.ingest.donki --start-date 2026-04
 uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons --start 2026-04-01T00:00:00Z --end 2026-04-12T00:00:00Z
 ```
 
-Run any ingest module with `--help` for its full option list.
+Run any ingest module with `--help` for its full option list. Airflow always runs
+each module with its defaults (the Artemis II mission window); for other options, run
+the module natively as above.
 
 ## Checking the data
 
@@ -233,6 +257,14 @@ You can also query through the API, e.g. `curl "http://localhost:8000/orion?limi
 or `curl http://localhost:8000/telemetry/synthetic/latest`, or connect any
 Postgres GUI client (DBeaver, TablePlus, pgAdmin, ...) to `localhost:5433`.
 
+When Airflow runs the ingest jobs, check its runs in the UI (http://localhost:8080,
+**Grid** view, each source's **Logs**) or from the command line:
+
+```
+docker compose exec airflow-scheduler airflow dags list-runs real_data_backfill
+docker compose exec airflow-scheduler airflow dags list-runs real_data_refresh
+```
+
 ## Tests
 
 ```
@@ -252,8 +284,8 @@ Each test file covers one function (e.g.
 `responses`, database connections with `unittest.mock.MagicMock`.
 
 Unit tests cover all pipeline ingest modules, the backend (`tests/unit/backend`),
-the physics models (`tests/unit/physics_models`) and the dashboard's helpers
-(`tests/unit/dashboard`).
+the physics models (`tests/unit/physics_models`), the dashboard's helpers
+(`tests/unit/dashboard`) and the Airflow DAGs (`tests/unit/airflow`).
 
 ```
 # in Docker - from the repo root
@@ -284,12 +316,15 @@ A real data source flows ingest -> TimescaleDB -> backend -> dashboard:
 1. **Ingest:** a self-contained module `packages/pipelines/src/pipelines/ingest/<source>.py`
    that owns its table (follow `jpl_cad.py`: schema DDL, hypertable, dataclass,
    `fetch_*` / `upsert_*` / `main()`).
-2. **Backend:** a response model in `packages/contracts/src/contracts/models.py`, an ORM
+2. **Airflow:** add the module name to `BACKFILL_SOURCES` in
+   `airflow/dags/real_data_sources.py` (and to `REFRESH_SOURCES` if its data still
+   changes); a unit test fails until every ingest module is listed.
+3. **Backend:** a response model in `packages/contracts/src/contracts/models.py`, an ORM
    model in `packages/backend/src/backend/models.py`, and a route in
    `packages/backend/src/backend/api/routes/<source>.py` registered in
    `backend/api/__init__.py`.
-3. **Dashboard:** a client method in `dashboard/src/prototype/data/backend_api.py`, a
+4. **Dashboard:** a client method in `dashboard/src/prototype/data/backend_api.py`, a
    cached loader in `pages/_data.py`, the chart on a page, and its badge / summary /
    explainer entries in `pages/_explain.py` (a unit test keeps those in sync).
-4. **Tests:** unit tests under `tests/unit/pipelines/ingest/<source>/` and
+5. **Tests:** unit tests under `tests/unit/pipelines/ingest/<source>/` and
    `tests/unit/backend/`, following the layout in "Tests" above.

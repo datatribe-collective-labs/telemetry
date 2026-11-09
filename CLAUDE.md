@@ -179,7 +179,8 @@ header above `$$SOE`, not inside the data block.
     1,000-row cap.
   - `pages/_explain.py` - Real / Synthetic / Placeholder badge, summary and explainer
     per chart; a unit test fails if a page and these dicts disagree.
-  - Adding a source = ingest module + backend model/route + client method + loader +
+  - Adding a source = ingest module + its entry in `airflow/dags/real_data_sources.py`
+    + backend model/route + client method + loader +
     chart and `_explain.py` entries, plus unit tests under
     `tests/unit/pipelines/ingest/<source>/` and `tests/unit/backend/`.
 - `pipelines` and `backend` are deliberately independent (no shared import between
