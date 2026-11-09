@@ -40,7 +40,7 @@ uv sync --all-packages
 #    TimescaleDB, backend API (:8000) and the Digital Twin dashboard (:8501)
 docker compose up -d --build
 
-# 3. Real data shown next to the simulation (ingest jobs run on the host)
+# 3. Real data shown next to the simulation. Either on the host, one job per source:
 uv run --package pipelines python -m pipelines.ingest.nasa_oem
 uv run --package pipelines python -m pipelines.ingest.jpl_orion
 uv run --package pipelines python -m pipelines.ingest.jpl_moon
@@ -48,6 +48,9 @@ uv run --package pipelines python -m pipelines.ingest.jpl_dsn_geometry
 uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons
 uv run --package pipelines python -m pipelines.ingest.donki
 uv run --package pipelines python -m pipelines.ingest.mission_events  # mission phases (draft)
+#    ...or all of them through Airflow (UI http://localhost:8080, user admin):
+docker compose --profile airflow up -d --build
+docker compose exec airflow-scheduler airflow dags trigger real_data_backfill
 
 # 4. Open http://localhost:8501
 ```
@@ -119,7 +122,7 @@ More docs: [`docs/README.md`](docs/README.md) (index),
 
 TimescaleDB, Redpanda, the migration, `physics_models`, `physics_models_consumer`,
 the backend and the dashboard run in Docker; the real-data ingest jobs run natively
-with `uv run`.
+with `uv run`, or are scheduled by Airflow in Docker (compose profile `airflow`).
 
 **Real data sources** (one ingest module and one table each):
 
@@ -149,8 +152,12 @@ at top-level routes (`/orion`, `/donki`, ...) and synthetic data under
   consumer and backend wait for), `physics_models` (producer),
   `physics_models_consumer`, the backend API (`:8000`) and the dashboard
   (`:8501`), plus the on-demand `tests` service (see "Tests" below).
-- **Natively via `uv run`**: the ingest jobs. They talk to the Dockerized database
-  over `localhost:5433`. The backend and dashboard can also run natively while you
+- **Airflow, in Docker, opt-in** (`docker compose --profile airflow up -d`): runs the
+  ingest jobs as DAGs, `real_data_backfill` (manual, every source) and
+  `real_data_refresh` (daily), one job at a time. UI on `127.0.0.1:8080` only. See
+  `RUN_SERVICES.md` step 3.
+- **Natively via `uv run`**: the ingest jobs, when not using Airflow. They talk to the
+  Dockerized database over `localhost:5433`. The backend and dashboard can also run natively while you
   work on their code (stop their containers first; see `RUN_SERVICES.md`).
 
 ## How to run
@@ -255,6 +262,10 @@ docker compose run --rm tests
 # or natively - also from the repo root
 uv sync --all-packages   # ensure the shared root venv has every workspace package
 uv run pytest tests/unit
+
+# Airflow DAG tests: they need Airflow (no native Windows support), so they are
+# skipped natively and run in the Airflow image
+docker compose run --rm --build airflow-tests
 ```
 
 The root `uv run pytest` reuses the single shared `.venv`. A partial

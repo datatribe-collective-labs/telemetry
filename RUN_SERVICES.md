@@ -80,6 +80,25 @@ uv run --package pipelines python -m pipelines.ingest.nasa_oem
 uv run --package pipelines python -m pipelines.ingest.mission_events  # DRAFT data
 ```
 
+#### Or scheduled by Airflow (Docker, profile `airflow`)
+Airflow runs the same commands as DAGs (`airflow/dags/`): `real_data_backfill` (manual
+trigger, every source above) and `real_data_refresh` (daily: DONKI, GOES protons, JPL
+CAD; the mission ephemeris and timeline are final). Tasks run strictly one at a time
+(JPL fair use), and a failed source doesn't stop the others. Airflow keeps its own
+metadata in an `airflow` database on the same TimescaleDB, created by `airflow-init`.
+```bash
+docker compose --profile airflow up -d --build   # the whole app plus Airflow
+
+# UI: http://localhost:8080 (user admin, password AIRFLOW_ADMIN_PASSWORD, default "admin")
+# Load all real data once (or use the ▶ button on real_data_backfill in the UI):
+docker compose exec airflow-scheduler airflow dags trigger real_data_backfill
+docker compose exec airflow-scheduler airflow dags list-runs real_data_backfill
+```
+The UI is published on `127.0.0.1` only; on a server, open it through
+`ssh -L 8080:localhost:8080 <server>`. Task logs are in the UI (or the `airflow_logs`
+volume). The DAG unit tests need Airflow, so they run in its image:
+`docker compose run --rm --build airflow-tests`.
+
 ### 4. Synthetic data — physics models (Docker) produce telemetry to Kafka
 ```bash
 # Build and start (produces to 4 Kafka topics: trajectory, telemetry, cross_model_state, ml_features;
@@ -153,6 +172,8 @@ curl http://localhost:8501/_stcore/health
 - Kafka topics must exist before physics models start (auto-created by Redpanda)
 - TimescaleDB must be healthy before pipelines/physics_models start; Compose waits for it,
   and for `migrate` before the consumer and backend
+- Airflow is **opt-in** (`--profile airflow`); a plain `docker compose up` doesn't start it.
+  Its ingest tasks reach the database at `timescaledb:5432` (container `DATABASE_URL`)
 
 ## Demo Replay Controls (physics_models)
 The simulator replays the mission from liftoff on the sim clock. Ticks stay 1 Hz on the
@@ -199,10 +220,15 @@ Lunar SOI entry 4/06:59 · close approach 5/01:23:20 (433,400 s) · splashdown 9
 
 ### Stop Docker containers
 ```bash
-# Stop every service (including the backend and dashboard containers)
+# Stop every service (including the backend, dashboard and Airflow containers)
 docker compose down
 
-# Full reset — also delete DB volume and Kafka topics (start from scratch)
+# Stop only Airflow, keep the rest running
+docker compose --profile airflow stop airflow-apiserver airflow-scheduler airflow-dag-processor
+
+# Full reset — also delete DB volume and Kafka topics (start from scratch). This also
+# deletes Airflow's run history (its `airflow` database lives in the same volume) and
+# the real data, so trigger real_data_backfill again afterwards.
 docker compose down -v
 ```
 
@@ -249,3 +275,6 @@ Get-NetTCPConnection -LocalPort 8000,8501 -State Listen
 | `ModuleNotFoundError` (`contracts`, `httpx`, `fastapi`, ...) when starting a host service | A partial `uv sync --package <pkg>` pruned the shared `.venv`; run `uv sync --all-packages` |
 | `RuntimeError: DATABASE_URL or POSTGRES_USER, ... must be set` | Create `.env` from `.env.example` in the repo root (step 0) |
 | Native `uv run` fails with `Access is denied` on `.venv/lib64` (Windows) | A Linux container wrote a Unix-style `.venv`; delete `.venv` and run `uv sync --all-packages` again |
+| Airflow services never start, `airflow-init` exited non-zero | `docker compose --profile airflow logs airflow-init` (usually the DB credentials in `.env`) |
+| Airflow login rejected after changing `AIRFLOW_ADMIN_PASSWORD` | The password is applied by `airflow-init`: `docker compose --profile airflow up -d --force-recreate airflow-init` |
+| Airflow task failed | Open the task in the UI's Grid view → **Logs** (the ingest module's own output and traceback); fix, then **Clear** the task to re-run it |

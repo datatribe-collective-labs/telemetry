@@ -40,7 +40,8 @@ Source → Processing → Storage → Dashboard
 | **Backend API** | ✅ 12 Synthetic Endpoints | `/telemetry/synthetic/*` — all return lowercase JSON keys (28 endpoints total incl. real data + health) |
 | **Streamlit Prototype Dashboard** | ✅ 4 Pages | Mission, Spacecraft health, Space environment, Model accuracy |
 | **Docker Compose Stack** | ✅ Running | `redpanda`, `timescaledb`, `physics_models`, `physics_models_consumer` all healthy |
-| **Real Data Pipelines** | ✅ 5 Ingest Modules | JPL CAD, JPL Orion (Horizons), NASA DONKI, GOES Proton Flux (iSWA), JPL DSN Geometry (Horizons observer) |
+| **Real Data Pipelines** | ✅ 8 Ingest Modules | JPL CAD, JPL Orion and Moon (Horizons), NASA DONKI, GOES Proton Flux (iSWA), JPL DSN Geometry (Horizons observer), NASA OEM arcs, mission timeline |
+| **Ingest Scheduling** | ✅ Airflow (opt-in) | Compose profile `airflow`: `real_data_backfill` (manual, all 8) and `real_data_refresh` (daily: DONKI, GOES, CAD) |
 
 ### 2.2 🔄 Currently Running (Verified Data Flow)
 
@@ -318,6 +319,7 @@ telemetry/
 │   ├── integration/                  # PIPELINE_STATUS.md, PHYSICS_MODELS_CONTRACT_COMPLIANCE.md, sgps_ge10_proton_flux.md
 │   ├── guides/                       # Walkthroughs, prompts, debugging records
 │   └── decisions/                    # Design decision records
+├── airflow/                          # Airflow image + DAGs scheduling the real-data ingest jobs
 ├── docker-compose.yml                # Infrastructure services
 ├── pyproject.toml                    # Workspace config (uv)
 ├── uv.lock                           # Locked dependencies
@@ -336,7 +338,7 @@ telemetry/
 │   ├── pipelines/                    # Real data ingestion pipelines
 │   │   ├── pyproject.toml
 │   │   └── src/pipelines/
-│   │       ├── ingest/               # JPL CAD, Orion, DONKI, GOES
+│   │       ├── ingest/               # 8 sources: JPL CAD, Orion, Moon, DSN, DONKI, GOES, OEM, timeline
 │   │       └── transforms/           # sgps_proton_flux, planned_attitude
 │   │
 │   ├── physics_models/               # Synthetic telemetry generation
@@ -447,11 +449,17 @@ uv run --package dashboard streamlit run dashboard/src/prototype/app.py --server
 ```
 
 ### 7.3 Optional: Ingest Real Data
+Natively, one module per source (all 8 are listed in `RUN_SERVICES.md` step 3):
 ```bash
+uv run --package pipelines python -m pipelines.ingest.nasa_oem
 uv run --package pipelines python -m pipelines.ingest.jpl_orion
 uv run --package pipelines python -m pipelines.ingest.donki
-uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons
-uv run --package pipelines python -m pipelines.ingest.jpl_dsn_geometry
+# ...
+```
+Or scheduled by Airflow in Docker (UI on http://localhost:8080, user `admin`):
+```bash
+docker compose --profile airflow up -d --build
+docker compose exec airflow-scheduler airflow dags trigger real_data_backfill
 ```
 
 ### 7.4 Verification Commands

@@ -1,3 +1,34 @@
+# Airflow (profile "airflow"): schedules the real-data ingest jobs (airflow/dags/).
+# LocalExecutor, so tasks run inside the scheduler container; metadata in a separate
+# `airflow` database on the timescaledb container. UI: http://localhost:8080 (user admin).
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: airflow/Dockerfile
+    target: runtime
+  image: telemetry-airflow
+  profiles: ["airflow"]
+  environment: &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    # Unpaused, so the daily refresh runs unattended (the backfill has no schedule).
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-apiserver:8080/execution/
+    # Shared by every Airflow service (tasks authenticate to the api-server with it).
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-dev-only-change-me}
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    # For the ingest jobs themselves (pipelines.db reads DATABASE_URL)
+    DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/${POSTGRES_DB}
+  volumes:
+    - airflow_logs:/opt/airflow/logs
+  depends_on:
+    timescaledb:
+      condition: service_healthy
+    airflow-init:
+      condition: service_completed_successfully
+
 services:
   redpanda:
     image: docker.redpanda.com/redpandadata/redpanda:v24.1.1
@@ -94,6 +125,88 @@ services:
       backend:
         condition: service_healthy
 
+  # One-shot: create the `airflow` database if missing, migrate it, create the
+  # one-slot ingest pool and the `admin` UI user (password re-synced from
+  # AIRFLOW_ADMIN_PASSWORD on every start, so changing it in .env rotates it), then exit.
+  airflow-init:
+    <<: *airflow-common
+    environment:
+      <<: *airflow-common-env
+      # The image entrypoint would otherwise wait for the `airflow` DB before it exists.
+      CONNECTION_CHECK_MAX_COUNT: "0"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        python - <<'PY'
+        import os, psycopg2
+        conn = psycopg2.connect(host="timescaledb", user=os.environ["POSTGRES_USER"],
+                                password=os.environ["POSTGRES_PASSWORD"], dbname=os.environ["POSTGRES_DB"])
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_database WHERE datname = 'airflow'")
+            if cur.fetchone() is None:
+                cur.execute("CREATE DATABASE airflow")
+                print("Created database airflow")
+        PY
+        airflow db migrate
+        airflow pools set real_data_ingest 1 "Real-data ingest jobs, one at a time (JPL SSD fair use)"
+        if airflow users list -o plain | awk 'NR > 1 {print $$2}' | grep -qx admin; then
+          airflow users reset-password --username admin --password "$${AIRFLOW_ADMIN_PASSWORD}"
+        else
+          airflow users create --username admin --password "$${AIRFLOW_ADMIN_PASSWORD}" \
+            --role Admin --firstname Admin --lastname User --email admin@localhost
+        fi
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+
+  airflow-apiserver:
+    <<: *airflow-common
+    command: api-server
+    # Localhost only: on the server, reach it over `ssh -L 8080:localhost:8080`.
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    # LocalExecutor runs the tasks in this container; they report to the api-server.
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+      airflow-apiserver:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
   timescaledb:
     image: timescale/timescaledb:latest-pg16
     environment:
@@ -141,6 +254,26 @@ services:
       timescaledb:
         condition: service_healthy
 
+  # DAG unit tests inside the Airflow image (Airflow doesn't run on native Windows).
+  # Run with: docker compose run --rm --build airflow-tests
+  airflow-tests:
+    build:
+      context: .
+      dockerfile: airflow/Dockerfile
+      target: test
+    profiles: ["test"]
+    working_dir: /repo
+    volumes:
+      - .:/repo:ro
+    environment:
+      CONNECTION_CHECK_MAX_COUNT: "0"
+      PYTHONDONTWRITEBYTECODE: "1"
+      # Parse the repo's DAGs, not the copy baked into the image
+      AIRFLOW__CORE__DAGS_FOLDER: /repo/airflow/dags
+    # --noconftest: tests/conftest.py needs the workspace packages, which this image lacks
+    command: ["python", "-m", "pytest", "tests/unit/airflow/dags/real_data_ingest", "--noconftest", "-p", "no:cacheprovider"]
+
 volumes:
   timescaledb_data:
   uv_cache:
+  airflow_logs:
