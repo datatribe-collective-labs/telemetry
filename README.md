@@ -9,36 +9,24 @@ publish (**real data**).
 
 ```mermaid
 flowchart LR
-    subgraph REAL["Real data: published by NASA/JPL"]
-        Sources["NASA / JPL APIs<br/>Horizons, DONKI, iSWA, CAD"]
-        Airflow["Airflow<br/>runs the jobs daily or on demand"]
-        Ingest["Ingest jobs<br/>packages/pipelines"]
-        Sources --> Ingest
-        Airflow -. triggers .-> Ingest
-    end
-
-    subgraph SYN["Synthetic data: our simulation"]
-        Physics["Physics models<br/>packages/physics_models"]
-        Kafka["Redpanda<br/>Kafka"]
-        Consumer["Consumer"]
-        Physics --> Kafka --> Consumer
-    end
-
-    OEM["NASA OEM trajectory<br/>data/oem/"]
+    NASA["NASA / JPL - real data"]
+    Airflow["Airflow - schedules the ingest jobs"]
+    Ingest["Ingest jobs"]
+    Physics["Physics models - synthetic data"]
+    Kafka["Redpanda - Kafka"]
     DB[("TimescaleDB")]
-    API["Backend API<br/>packages/backend"]
-    Twin["Digital Twin dashboard<br/>dashboard/"]
+    API["Backend"]
+    Twin["Digital Twin dashboard"]
 
-    OEM --> Ingest
-    OEM --> Physics
+    NASA --> Ingest
+    Airflow --> Ingest
     Ingest --> DB
-    Consumer --> DB
-    DB --> API --> Twin
+    NASA -- OEM trajectory --> Physics
+    Physics --> Kafka
+    Kafka --> DB
+    DB --> API
+    API --> Twin
 ```
-
-Both paths end in the same database. The dashboard reads it only through the backend
-API. NASA's OEM trajectory feeds both sides: it is stored as real data and it is the
-path the simulated Orion flies.
 
 ## Quick start
 
@@ -72,36 +60,17 @@ troubleshooting.
 
 ## Real data vs synthetic data
 
-Orion's onboard telemetry (temperatures, battery charge, link margin, radiation
-dose, ...) is not public. So this project **simulates it from physics** - that is
-the **synthetic data** - and uses the **real data** NASA/JPL do publish in two
-ways: as **inputs** that drive the simulation, and as **ground truth** to check it
-against.
+Orion's onboard telemetry is not public, so this project **simulates it**: that is
+the **synthetic data**. The **real data** is what NASA/JPL do publish; it drives the
+simulation and is the ground truth to check it against.
 
-- **Real data** - published by NASA/JPL: Orion's trajectory, the Moon's position,
-  Deep Space Network (DSN) geometry, space weather, and the planned mission
-  timeline. Fetched by batch ingest jobs (`packages/pipelines`) into TimescaleDB,
-  or read from NASA files shipped in the repo (`data/oem/`).
-- **Synthetic data** - simulated spacecraft telemetry from the physics models
-  (`packages/physics_models`), streamed through Redpanda (Kafka) into TimescaleDB.
-  State, thermal and power are real physics models; comms, radiation, packet
-  assembly and anomaly/ML still emit **placeholder values**.
-
-| Data | Kind | Stored in | Drives the simulation? | Shown in |
-|------|------|-----------|------------------------|----------|
-| NASA OEM trajectory arcs | real (file) | `data/oem/`, `oem_state_vectors` | ✅ the synthetic trajectory is interpolated from these | Mission |
-| Artemis II attitude timeline | real (curated, **draft**) | `contracts.planned_attitude`, `mission_events` | ✅ spacecraft attitude / solar angles | Mission (timeline strip), Spacecraft health (phase markers) |
-| JPL Horizons Orion trajectory | real | `orion_ephemeris` | no - ground truth the synthetic trajectory is compared against | Mission, Model accuracy |
-| JPL Horizons Moon position | real | `moon_ephemeris` | no - context on the trajectory map | Mission |
-| DSN site geometry (Horizons) | real | `dsn_site_geometry` | not yet (planned input for comms) | Space environment |
-| GOES proton flux (iSWA) | real | `goes_integral_protons` | not yet (planned input for radiation) | Space environment |
-| DONKI space weather events | real | `donki_events` | not yet (planned input for radiation) | Space environment |
-| JPL close approaches (CAD) | real | `close_approaches` | no | not shown (API only: `/close-approaches`) |
-| State, thermal, power | synthetic | `state_snapshot`, `thermal_output`, `power_output` | - (model outputs) | Mission, Spacecraft health |
-| Comms, radiation, packet, cross-model, ML features | synthetic, **placeholder** | `comms_output`, `radiation_output`, `telemetry_packet`, `cross_model_state`, `ml_feature_vectors` | - (model outputs) | Mission (grey "not simulated yet" tiles) |
-
-Each real table is filled by the ingest module of the same source in
-`packages/pipelines/src/pipelines/ingest/` (e.g. `jpl_orion` -> `orion_ephemeris`).
+| Data | Kind | Role |
+|------|------|------|
+| NASA OEM trajectory, mission timeline (draft) | Real | Input: the simulated Orion follows them |
+| JPL Horizons Orion trajectory | Real | Ground truth for the simulated trajectory |
+| Moon, DSN antennas, space weather (GOES, DONKI) | Real | Context; planned inputs for comms and radiation |
+| State, thermal, power | Synthetic | Physics model output |
+| Comms, radiation, anomaly/ML | Synthetic | **Placeholder** values, not simulated yet |
 
 ### The dashboard
 
