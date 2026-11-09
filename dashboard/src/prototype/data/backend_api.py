@@ -1,6 +1,7 @@
 """Backend API client for Streamlit prototype.
 
-Connects to FastAPI backend at http://localhost:8000 by default.
+Connects to the FastAPI backend at $BACKEND_URL (default http://localhost:8000;
+the Docker Compose dashboard service sets http://backend:8000).
 All endpoints return Pydantic models from contracts package.
 
 The client is synchronous: Streamlit runs each session's script on its own
@@ -8,6 +9,7 @@ thread, and one shared httpx.Client is safe to use across those threads
 (an AsyncClient is bound to the event loop that created it).
 """
 
+import os
 from datetime import datetime
 from typing import Any
 
@@ -32,6 +34,13 @@ from contracts import (
 # The backend rejects `limit` above this on every list endpoint (Query le=1000).
 MAX_LIMIT = 1000
 
+DEFAULT_BACKEND_URL = "http://localhost:8000"
+
+
+def backend_url() -> str:
+    """The backend's base URL: $BACKEND_URL if set (and not blank), else localhost:8000."""
+    return os.environ.get("BACKEND_URL", "").strip() or DEFAULT_BACKEND_URL
+
 
 class BackendAPIError(Exception):
     """Backend unreachable or returned an error; message is safe to show in the UI."""
@@ -40,8 +49,8 @@ class BackendAPIError(Exception):
 class BackendAPI:
     """Sync HTTP client for FastAPI backend."""
 
-    def __init__(self, base_url: str = "http://localhost:8000", timeout: float = 10.0):
-        self.base_url = base_url.rstrip("/")
+    def __init__(self, base_url: str | None = None, timeout: float = 10.0):
+        self.base_url = (base_url or backend_url()).rstrip("/")
         self.timeout = timeout
         self._client = httpx.Client(base_url=self.base_url, timeout=self.timeout)
 
@@ -278,6 +287,6 @@ SyncBackendAPI = BackendAPI
 
 
 @st.cache_resource
-def get_api(base_url: str = "http://localhost:8000") -> BackendAPI:
-    """Get the process-wide API client (shared by all sessions)."""
+def get_api(base_url: str | None = None) -> BackendAPI:
+    """Get the process-wide API client (shared by all sessions); defaults to backend_url()."""
     return BackendAPI(base_url)

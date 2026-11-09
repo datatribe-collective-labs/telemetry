@@ -11,8 +11,9 @@ Strategy: Streamlit now, a Vanilla JS + Plotly.js "Mission Control" later (see
 
 ## `src/prototype/` - Streamlit Digital Twin dashboard (v1)
 
-Consumes the FastAPI backend (`packages/backend`, `http://localhost:8000`) through
-the client in `data/backend_api.py`, which returns the `contracts` Pydantic models.
+Consumes the FastAPI backend (`packages/backend`) at `$BACKEND_URL` (default
+`http://localhost:8000`) through the client in `data/backend_api.py`, which returns
+the `contracts` Pydantic models.
 It does not query the database directly.
 
 Written for non-experts first: four pages, each answering one question, with
@@ -45,7 +46,11 @@ Design notes: `docs/architecture/DASHBOARD_V1_DESIGN.md`.
 ### Run
 
 The backend must be running, with data in TimescaleDB (full startup order in
-`RUN_SERVICES.md`). From the repo root:
+`RUN_SERVICES.md`). In Docker, `docker compose up -d --build` starts the dashboard
+(`dashboard/Dockerfile`) with everything it needs -> http://localhost:8501.
+
+Natively, for working on the code (`docker compose stop backend dashboard` first,
+they share the ports). From the repo root:
 
 ```bash
 uv sync --all-packages

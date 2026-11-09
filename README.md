@@ -36,13 +36,12 @@ Needs Docker and [`uv`](https://docs.astral.sh/uv/). Run from the repo root;
 cp .env.example .env
 uv sync --all-packages
 
-# 2. Database + Kafka, then the synthetic data tables
-docker compose up -d timescaledb redpanda
-cd packages/backend
-uv run --package backend alembic upgrade head
-cd ../..
+# 2. Everything in Docker: database, Kafka, migration, physics models -> Kafka ->
+#    TimescaleDB, backend API (:8000) and the Digital Twin dashboard (:8501)
+docker compose up -d --build
 
-# 3. Real data shown next to the simulation
+# 3. Real data shown next to the simulation (ingest jobs run on the host)
+uv run --package pipelines python -m pipelines.ingest.nasa_oem
 uv run --package pipelines python -m pipelines.ingest.jpl_orion
 uv run --package pipelines python -m pipelines.ingest.jpl_moon
 uv run --package pipelines python -m pipelines.ingest.jpl_dsn_geometry
@@ -50,15 +49,11 @@ uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons
 uv run --package pipelines python -m pipelines.ingest.donki
 uv run --package pipelines python -m pipelines.ingest.mission_events  # mission phases (draft)
 
-# 4. Synthetic data: physics models -> Kafka -> TimescaleDB
-docker compose up -d --build physics_models physics_models_consumer
-
-# 5. Backend API (terminal 1)
-uv run --package backend python -m backend.main
-
-# 6. Digital Twin dashboard (terminal 2) -> http://localhost:8501
-uv run --package dashboard streamlit run dashboard/src/prototype/app.py
+# 4. Open http://localhost:8501
 ```
+
+To work on the backend or dashboard code with live reload, run them natively
+with `uv run` instead (see [`RUN_SERVICES.md`](RUN_SERVICES.md)).
 
 To speed up the simulated mission, see "Demo Replay Controls" in
 [`RUN_SERVICES.md`](RUN_SERVICES.md); it also covers stopping services and
@@ -122,8 +117,9 @@ More docs: [`docs/README.md`](docs/README.md) (index),
 
 ## Data sources
 
-TimescaleDB, Redpanda, `physics_models` and `physics_models_consumer` run in
-Docker; everything else runs natively with `uv run`.
+TimescaleDB, Redpanda, the migration, `physics_models`, `physics_models_consumer`,
+the backend and the dashboard run in Docker; the real-data ingest jobs run natively
+with `uv run`.
 
 **Real data sources** (one ingest module and one table each):
 

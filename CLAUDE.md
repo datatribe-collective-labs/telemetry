@@ -181,10 +181,13 @@ header above `$$SOE`, not inside the data block.
   shared db/config package unless asked.
 - Each package has its own `Dockerfile` where applicable (built from the **repo root**,
   e.g. `docker build -f packages/physics_models/Dockerfile .`, so `uv` can resolve the
-  workspace). For local dev, the Docker stack is `timescaledb`, `redpanda`,
-  `physics_models`, `physics_models_consumer` (plus the on-demand `tests` service);
-  `backend` and the Streamlit dashboards run natively via `uv run`
-  (see `RUN_SERVICES.md`). `packages/pipelines/Dockerfile` installs no JDK -
+  workspace). `docker compose up -d --build` runs the whole app: `timescaledb`,
+  `redpanda`, `migrate` (one-shot `alembic upgrade head`; the consumer and backend wait
+  for it), `physics_models`, `physics_models_consumer`, `backend` and `dashboard`
+  (`dashboard/Dockerfile`; it finds the backend via `BACKEND_URL`, default
+  `http://localhost:8000`). The `tests`/`orion-tests` services are in the `test`
+  profile. For code changes the backend and dashboard can still run natively via
+  `uv run` (`BACKEND_RELOAD=1` turns on uvicorn reload; see `RUN_SERVICES.md`). `packages/pipelines/Dockerfile` installs no JDK -
   the `pipelines` package has no PySpark dependency; if one is reintroduced,
   target Spark 4.x (Java 17/21/25) and use `openjdk-21-jre-headless` -
   openjdk-17 no longer exists on the `python:3.12-slim`/Debian trixie base.
