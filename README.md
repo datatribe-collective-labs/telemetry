@@ -36,13 +36,12 @@ Needs Docker and [`uv`](https://docs.astral.sh/uv/). Run from the repo root;
 cp .env.example .env
 uv sync --all-packages
 
-# 2. Database + Kafka, then the synthetic data tables
-docker compose up -d timescaledb redpanda
-cd packages/backend
-uv run --package backend alembic upgrade head
-cd ../..
+# 2. Everything in Docker: database, Kafka, migration, physics models -> Kafka ->
+#    TimescaleDB, backend API (:8000) and the Digital Twin dashboard (:8501)
+docker compose up -d --build
 
-# 3. Real data shown next to the simulation
+# 3. Real data shown next to the simulation (ingest jobs run on the host)
+uv run --package pipelines python -m pipelines.ingest.nasa_oem
 uv run --package pipelines python -m pipelines.ingest.jpl_orion
 uv run --package pipelines python -m pipelines.ingest.jpl_moon
 uv run --package pipelines python -m pipelines.ingest.jpl_dsn_geometry
@@ -50,15 +49,11 @@ uv run --package pipelines python -m pipelines.ingest.iswa_goes_protons
 uv run --package pipelines python -m pipelines.ingest.donki
 uv run --package pipelines python -m pipelines.ingest.mission_events  # mission phases (draft)
 
-# 4. Synthetic data: physics models -> Kafka -> TimescaleDB
-docker compose up -d --build physics_models physics_models_consumer
-
-# 5. Backend API (terminal 1)
-uv run --package backend python -m backend.main
-
-# 6. Digital Twin dashboard (terminal 2) -> http://localhost:8501
-uv run --package dashboard streamlit run dashboard/src/prototype/app.py
+# 4. Open http://localhost:8501
 ```
+
+To work on the backend or dashboard code, run them natively with `uv run` instead
+(`BACKEND_RELOAD=1` turns on backend auto-reload; see [`RUN_SERVICES.md`](RUN_SERVICES.md)).
 
 To speed up the simulated mission, see "Demo Replay Controls" in
 [`RUN_SERVICES.md`](RUN_SERVICES.md); it also covers stopping services and
@@ -122,8 +117,9 @@ More docs: [`docs/README.md`](docs/README.md) (index),
 
 ## Data sources
 
-TimescaleDB, Redpanda, `physics_models` and `physics_models_consumer` run in
-Docker; everything else runs natively with `uv run`.
+TimescaleDB, Redpanda, the migration, `physics_models`, `physics_models_consumer`,
+the backend and the dashboard run in Docker; the real-data ingest jobs run natively
+with `uv run`.
 
 **Real data sources** (one ingest module and one table each):
 
@@ -149,11 +145,13 @@ at top-level routes (`/orion`, `/donki`, ...) and synthetic data under
 
 - **In Docker** (`docker-compose.yml`): `timescaledb` (host port **5433**, not
   5432 - a native Postgres install commonly already owns 5432), `redpanda`
-  (Kafka on `:9092`), `physics_models` (producer) and `physics_models_consumer`,
-  plus the on-demand `tests` service (see "Tests" below).
-- **Natively via `uv run`**: the ingest jobs, the backend API (`:8000`) and the
-  dashboard (`:8501`). They talk to the Dockerized database over
-  `localhost:5433`.
+  (Kafka on `:9092`), `migrate` (one-shot `alembic upgrade head`, which the
+  consumer and backend wait for), `physics_models` (producer),
+  `physics_models_consumer`, the backend API (`:8000`) and the dashboard
+  (`:8501`), plus the on-demand `tests` service (see "Tests" below).
+- **Natively via `uv run`**: the ingest jobs. They talk to the Dockerized database
+  over `localhost:5433`. The backend and dashboard can also run natively while you
+  work on their code (stop their containers first; see `RUN_SERVICES.md`).
 
 ## How to run
 
@@ -179,14 +177,15 @@ http://localhost:8000/docs).
 
 ### Real data only
 
-The real data doesn't need Kafka or the physics models: start `timescaledb`, run the
-ingest jobs (each creates its own table) and the backend, then open the dashboard
+The real data doesn't need Kafka or the physics models: start the dashboard (which
+brings up `timescaledb`, `migrate` and the backend, but not Redpanda or the physics
+models), run the ingest jobs (each creates its own table), then open the dashboard
 with **Live** off in the sidebar, or inspect the data through the API or SQL (see
 [Checking the data](#checking-the-data)). The synthetic charts stay empty until the
 physics models run.
 
 ```bash
-docker compose up -d timescaledb
+docker compose up -d --build dashboard   # -> http://localhost:8501
 uv run --package pipelines python -m pipelines.ingest.jpl_orion
 uv run --package pipelines python -m pipelines.ingest.jpl_moon
 uv run --package pipelines python -m pipelines.ingest.jpl_dsn_geometry

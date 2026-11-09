@@ -44,7 +44,54 @@ services:
     depends_on:
       redpanda:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # One-shot: Alembic creates/upgrades the synthetic telemetry tables, then exits.
+  # The consumer and backend start only after it succeeded.
+  migrate:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    image: telemetry-backend
+    working_dir: /app/packages/backend
+    command: ["/app/.venv/bin/alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/${POSTGRES_DB}
+    depends_on:
       timescaledb:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    image: telemetry-backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/${POSTGRES_DB}
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # The Digital Twin dashboard: http://localhost:8501
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+    image: telemetry-dashboard
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      backend:
         condition: service_healthy
 
   timescaledb:
@@ -80,6 +127,7 @@ services:
     command: ["uv", "run", "--package", "pipelines", "pytest", "-p", "no:cacheprovider"]
 
   orion-tests:
+    profiles: ["test"]
     build:
       context: .
       dockerfile: tests/Dockerfile

@@ -10,6 +10,24 @@ synthetic data path; steps 6-7 (backend + dashboard) serve both.
 - Docker & Docker Compose
 - uv (for local development)
 
+## Quick start: everything in Docker
+
+After the one-time setup (step 0), one command starts the whole app in order:
+TimescaleDB and Redpanda → `migrate` (one-shot `alembic upgrade head`) → physics
+models, consumer and backend → dashboard.
+```bash
+docker compose up -d --build
+
+docker compose ps -a      # migrate shows "Exited (0)", the rest "Up" / "healthy"
+curl http://localhost:8000/health
+# Open http://localhost:8501
+```
+Then load the real data (step 3). Demo replay knobs work the same way, e.g.
+`PHYSICS_MODELS_START_MET_SECONDS=12300 PHYSICS_MODELS_TIME_SCALE=60 docker compose up -d`.
+
+The numbered steps below do the same thing piece by piece, and show how to run the
+backend and dashboard natively (steps 6-7) while working on their code.
+
 ## Service Startup Order
 
 ### 0. One-time setup
@@ -33,8 +51,12 @@ docker compose exec redpanda rpk cluster health
 ```
 
 ### 2. Database Migration (required before consumer and backend)
-Starting from the **repo root** (Alembic runs from `packages/backend`, where `alembic.ini` lives).
 Creates the nine synthetic telemetry hypertables; the real-data tables are created by their ingest jobs in step 3.
+In Docker this is the `migrate` service, which the consumer and backend wait for:
+```bash
+docker compose up migrate    # runs alembic upgrade head, then exits
+```
+Or natively, starting from the **repo root** (Alembic runs from `packages/backend`, where `alembic.ini` lives):
 ```bash
 cd packages/backend
 uv run --package backend alembic upgrade head
@@ -82,10 +104,15 @@ docker compose up -d --build --force-recreate physics_models_consumer
 docker compose logs -f physics_models_consumer
 ```
 
-### 6. Backend API (uv, runs on host port 8000)
-Run from the **repo root**.
+### 6. Backend API (host port 8000)
+In Docker: `docker compose up -d --build backend` (starts `migrate` first).
+
+Natively, for working on the backend code: stop the container first
+(`docker compose stop backend dashboard`, they share the ports), then from the **repo root**:
 ```bash
-# Runs FastAPI with 28 REST endpoints for real + synthetic data
+# Runs FastAPI with 28 REST endpoints for real + synthetic data.
+# BACKEND_RELOAD=1 turns on auto-reload (off by default: a dead reloader can leave
+# its worker holding port 8000).
 uv run --package backend python -m backend.main
 
 # Verify (interactive API docs: http://localhost:8000/docs)
@@ -99,12 +126,16 @@ curl "http://localhost:8000/dsn-geometry?limit=5"
 curl "http://localhost:8000/telemetry/synthetic/latest?limit=5"
 ```
 
-### 7. Digital Twin dashboard (uv, runs on host port 8501)
+### 7. Digital Twin dashboard (host port 8501)
 
-Run from the **repo root**. Source: `dashboard/src/prototype`. Shows synthetic data
-with real data alongside, all read through the backend REST API (step 6 must be
-running). The earlier real-data-only Data Explorer was retired
-(`docs/decisions/ONE_DASHBOARD.md`).
+Source: `dashboard/src/prototype`. Shows synthetic data with real data alongside, all
+read through the backend REST API (step 6 must be running). It finds the backend via
+`BACKEND_URL` (default `http://localhost:8000`; the container uses `http://backend:8000`).
+The earlier real-data-only Data Explorer was retired (`docs/decisions/ONE_DASHBOARD.md`).
+
+In Docker: `docker compose up -d --build dashboard` (starts the backend first).
+
+Natively, from the **repo root** (after `docker compose stop dashboard`):
 ```bash
 # `dashboard` is a virtual workspace member that only declares the dashboard's deps
 uv run --package dashboard streamlit run dashboard/src/prototype/app.py --server.port 8501 --server.headless true
@@ -117,9 +148,11 @@ curl http://localhost:8501/_stcore/health
 ## Key Points
 - **Never** `pip install` in system Python — use `uv run --package <pkg>` or Docker
 - Physics models run **inside Docker** (connects to `redpanda:9092`)
-- Backend & dashboard run **on host** via `uv` (connect to `localhost:8000`, `localhost:5433`)
+- Backend & dashboard run **in Docker** by default (backend at `timescaledb:5432`, dashboard at
+  `BACKEND_URL=http://backend:8000`); run natively via `uv` they use `localhost:5433` / `localhost:8000`
 - Kafka topics must exist before physics models start (auto-created by Redpanda)
-- TimescaleDB must be healthy before pipelines/physics_models start
+- TimescaleDB must be healthy before pipelines/physics_models start; Compose waits for it,
+  and for `migrate` before the consumer and backend
 
 ## Demo Replay Controls (physics_models)
 The simulator replays the mission from liftoff on the sim clock. Ticks stay 1 Hz on the
@@ -166,14 +199,14 @@ Lunar SOI entry 4/06:59 · close approach 5/01:23:20 (433,400 s) · splashdown 9
 
 ### Stop Docker containers
 ```bash
-# Stop physics_models, consumer, Redpanda and TimescaleDB
+# Stop every service (including the backend and dashboard containers)
 docker compose down
 
 # Full reset — also delete DB volume and Kafka topics (start from scratch)
 docker compose down -v
 ```
 
-### Stop host processes (backend & dashboard)
+### Stop host processes (backend & dashboard, when run natively)
 Press `Ctrl+C` in the terminal running each one. If one was started in the background:
 ```bash
 # macOS / Linux
@@ -182,7 +215,11 @@ pkill -f "streamlit run"                                      # Dashboards (port
 ```
 ```powershell
 # Windows (PowerShell)
-Get-NetTCPConnection -LocalPort 8000,8501 -State Listen | ForEach-Object { Stop-Process -Id $_.OwningProcess }
+# Match on the command line, NOT on the port: when the containers publish 8000/8501,
+# the process owning those ports is Docker Desktop itself, and killing it crashes Docker.
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -match "backend\.main|streamlit(\.exe)?\W+run" -and $_.CommandLine -notmatch "Get-CimInstance" } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
 ```
 
 ### Verify nothing is left running
@@ -203,7 +240,9 @@ Get-NetTCPConnection -LocalPort 8000,8501 -State Listen
 | Issue | Fix |
 |-------|-----|
 | Backend 404 on `/telemetry/real/*` | Use correct paths: `/orion`, `/iswa-goes-protons`, `/donki`, `/dsn-geometry` |
-| Dashboard can't connect to backend | Ensure backend is running on `localhost:8000` |
+| Dashboard can't connect to backend | Ensure the backend is running (`docker compose ps backend`, or the native one on `localhost:8000`); the error names the URL tried, set by `BACKEND_URL` |
+| Backend/consumer never start, `migrate` exited non-zero | `docker compose logs migrate` (usually the DB credentials in `.env`) |
+| `Bind for 0.0.0.0:8000 failed: port is already allocated` | A native backend/dashboard is still running; stop it (see "Stopping Services") or run only the native one |
 | No synthetic data in backend | Start the consumer: `docker compose up -d --build physics_models_consumer` (step 5); check `docker compose logs physics_models_consumer` for "Inserted" lines |
 | Old (pre-normalization) Kafka messages show mixed-case fields (e.g. `solar_flux_W_m2`) | Historical junk from old runs; new messages are lowercase (`solar_flux_w_m2`). Consume from end (`-o end`) to verify |
 | Redpanda connection refused | `docker compose restart redpanda` then wait for health check |
