@@ -46,12 +46,10 @@ class SimulatorRunner:
         self.tick_interval = 1.0 / config.tick_hz
         self.running = False
         self._tick_count = 0
+        self._replay_start_tick = 0  # tick at which the current loop of the replay began
 
         # Initialize Kafka producer
         self.producer = PhysicsModelsKafkaProducer(config.kafka.bootstrap_servers)
-
-        # Initialize cross-model bus
-        self.cross_model = CrossModelBus()
 
         # Parse liftoff time
         self.liftoff_utc = datetime.fromisoformat(config.state_engine.liftoff_utc)
@@ -66,9 +64,55 @@ class SimulatorRunner:
         # Owned physics models (state / thermal / power are wired; comms,
         # radiation, anomaly and ML remain placeholders owned by others).
         self.oem_ephemeris: OemEphemeris | None = self._load_oem(config)
-        self.thermal_model = ThermalModel3Node.from_config(config.thermal.model_dump())
-        self.power_model = PowerModel()
+        self._reset_models()
         self.base_load_w = 1200.0  # placeholder load profile (Orion EPS budget TBD)
+        self.loop_end_met_s: float | None = self._loop_end_met_s()
+
+    def _reset_models(self) -> None:
+        """(Re)create the stateful models: at start-up and at the start of every loop."""
+        self.cross_model = CrossModelBus()
+        self.thermal_model = ThermalModel3Node.from_config(self.config.thermal.model_dump())
+        self.power_model = PowerModel()
+
+    def _loop_end_met_s(self) -> float | None:
+        """MET (s) at which `loop` restarts the replay: the end of the OEM arc.
+
+        After the arc (atmospheric entry) the state engine could only hold Orion at its
+        last point. None means no looping.
+        """
+        if not self.config.loop:
+            return None
+        if self.oem_ephemeris is None:
+            print("WARNING: loop needs the OEM ephemeris (its end is the end of the replay); not looping")
+            return None
+        end_met_s = (self.oem_ephemeris.stop - self.liftoff_utc).total_seconds()
+        if self.config.start_met_seconds >= end_met_s:
+            print(
+                f"WARNING: start_met_seconds ({self.config.start_met_seconds:.0f}) is past the end of "
+                f"the OEM arc (MET {end_met_s:.0f} s); not looping"
+            )
+            return None
+        return end_met_s
+
+    def _sim_seconds(self) -> float:
+        """Simulation clock for the current tick, in seconds after liftoff (MET).
+
+        Replays the mission from start_met_seconds at time_scale x real speed (tick pacing
+        stays tick_hz on the wall clock). With `loop`, the first tick past the end of the
+        OEM arc starts the replay over: same start, same tick grid, so the consumer
+        overwrites the previous loop's rows (keyed on timestamp_utc) instead of adding
+        new ones, and the models start fresh.
+        """
+        def met_at(ticks_into_loop: int) -> float:
+            return self.config.start_met_seconds + (ticks_into_loop / self.config.tick_hz) * self.config.time_scale
+
+        sim_seconds = met_at(self._tick_count - self._replay_start_tick)
+        if self.loop_end_met_s is not None and sim_seconds > self.loop_end_met_s:
+            self._replay_start_tick = self._tick_count
+            self._reset_models()
+            sim_seconds = met_at(0)
+            print(f"Replay looped at tick {self._tick_count}: back to MET {sim_seconds:.0f} s")
+        return sim_seconds
 
     def _load_oem(self, config: PhysicsModelsConfig) -> OemEphemeris | None:
         """Load NASA OEM ephemeris per config; None means placeholder orbit mode."""
@@ -136,12 +180,8 @@ class SimulatorRunner:
         while self.running:
             tick_start = time.perf_counter()
 
-            # Current simulation time: replay the mission from (liftoff + start_met_seconds),
-            # at time_scale × real speed (tick pacing stays 1 Hz on the wall clock).
-            sim_seconds = (
-                self.config.start_met_seconds
-                + (self._tick_count / self.config.tick_hz) * self.config.time_scale
-            )
+            # Current simulation time (replay from start_met_seconds; see _sim_seconds)
+            sim_seconds = self._sim_seconds()
             current_tick = self.liftoff_utc + timedelta(seconds=sim_seconds)
             met = current_tick - self.liftoff_utc
 
@@ -436,6 +476,8 @@ async def main():
         config.time_scale = float(scale)
     if seek := os.environ.get("PHYSICS_MODELS_START_MET_SECONDS"):
         config.start_met_seconds = float(seek)
+    if (loop := os.environ.get("PHYSICS_MODELS_LOOP")) is not None:
+        config.loop = loop == "1"
 
     runner = SimulatorRunner(config)
     await runner.run()

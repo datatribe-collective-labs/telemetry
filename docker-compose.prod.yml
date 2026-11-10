@@ -87,6 +87,13 @@ services:
   physics_models:
     <<: *logging
     restart: unless-stopped
+    environment:
+      # Public demo (#44): start where Orion starts moving (the NASA trajectory data begins
+      # at MET 12,157 s), 60x speed (one loop of the 9-day flight takes ~3.5 h), and start
+      # over at the end. Each loop rewrites the same timestamps, so the tables don't grow.
+      PHYSICS_MODELS_START_MET_SECONDS: ${PHYSICS_MODELS_START_MET_SECONDS:-12300}
+      PHYSICS_MODELS_TIME_SCALE: ${PHYSICS_MODELS_TIME_SCALE:-60}
+      PHYSICS_MODELS_LOOP: ${PHYSICS_MODELS_LOOP:-1}
     deploy:
       resources:
         limits:
