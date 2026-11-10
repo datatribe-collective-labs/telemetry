@@ -35,18 +35,17 @@ db-down:
 db-reset:
 	$(COMPOSE) down -v
 
+ORION_TESTS := $(COMPOSE) run --rm orion-tests uv run --package pipelines pytest -p no:cacheprovider -v
+ORION_TEST_FILE := tests/integration/test_orion_feature.py
+
 test-orion:
-	$(COMPOSE) run --rm --build orion-tests
+	$(ORION_TESTS) $(ORION_TEST_FILE)
 
 test-orion-pipeline:
-	$(COMPOSE) run --rm --build orion-tests \
-		uv run --package pipelines python -m unittest \
-		tests.integration.test_orion_feature.OrionPipelineIntegrationTests -v
+	$(ORION_TESTS) $(ORION_TEST_FILE)::OrionPipelineIntegrationTests
 
 test-orion-db:
-	$(COMPOSE) run --rm --build orion-tests \
-		uv run --package pipelines python -m unittest \
-		tests.integration.test_orion_feature.OrionTimescaleIntegrationTests -v
+	$(ORION_TESTS) $(ORION_TEST_FILE)::OrionTimescaleIntegrationTests
 
 ingest-orion:
 	@if command -v uv >/dev/null 2>&1; then \

@@ -244,17 +244,15 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
     command: ["uv", "run", "--package", "pipelines", "pytest", "-p", "no:cacheprovider"]
 
+  # Orion integration tests: the same read-only container as `tests`, plus the database
+  # (and a live call to JPL Horizons). Run with: make test-orion
   orion-tests:
-    profiles: ["test"]
-    build:
-      context: .
-      dockerfile: tests/Dockerfile
+    extends:
+      service: tests
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_USER:?set POSTGRES_USER in .env}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@timescaledb:5432/${POSTGRES_DB:?set POSTGRES_DB in .env}
       RUN_ORION_TIMESCALE_INTEGRATION: "1"
+    command: ["uv", "run", "--package", "pipelines", "pytest", "-p", "no:cacheprovider", "tests/integration/test_orion_feature.py"]
     depends_on:
       timescaledb:
         condition: service_healthy
