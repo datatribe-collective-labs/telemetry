@@ -86,7 +86,7 @@ mirroring the source path:
 Unit tests exist for all pipeline ingest modules (`jpl_cad`, `donki`,
 `iswa_goes_protons`, `jpl_dsn_geometry`), plus `tests/unit/backend` (route and
 model tests), `tests/unit/physics_models` and `tests/unit/dashboard` (the
-Digital Twin dashboard's helpers; a test keeps `pages/_explain.py` in sync with the
+Digital Twin dashboard's helpers; a test keeps `views/_explain.py` in sync with the
 pages) and `tests/unit/airflow` (the DAG source lists, natively; the DAGs themselves
 only in the `airflow-tests` container).
 
@@ -144,7 +144,8 @@ on disk that breaks subsequent native Windows `uv run` with `Access is denied` o
 
 When asked to "add a data source," it means an ingest module plus a backend route
 and a Digital Twin dashboard chart (see below); "add a page" means a page in
-`dashboard/src/prototype/pages/`.
+`dashboard/src/prototype/views/` (a module plus its `st.Page` entry in `app.py`; the folder must
+not be named `pages/`, see the comment in `app.py`).
 
 ## Architecture of the real data path (effort #2)
 
@@ -175,9 +176,9 @@ header above `$$SOE`, not inside the data block.
   *virtual* `uv` workspace member: it only declares the app's deps and is not built,
   so modules import each other as `dashboard.src.prototype...` from the repo root.
   - `data/backend_api.py` - the one HTTP client (sync `httpx`, returns `contracts` models).
-  - `pages/_data.py` - `@st.cache_data` loaders; `fetch_all` pages past the backend's
+  - `views/_data.py` - `@st.cache_data` loaders; `fetch_all` pages past the backend's
     1,000-row cap.
-  - `pages/_explain.py` - Real / Synthetic / Placeholder badge, summary and explainer
+  - `views/_explain.py` - Real / Synthetic / Placeholder badge, summary and explainer
     per chart; a unit test fails if a page and these dicts disagree.
   - Adding a source = ingest module + its entry in `airflow/dags/real_data_sources.py`
     + backend model/route + client method + loader +

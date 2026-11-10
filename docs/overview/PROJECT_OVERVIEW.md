@@ -389,7 +389,7 @@ telemetry/
 │       │   ├── app.py
 │       │   ├── data/
 │       │   │   └── backend_api.py    # REST client for FastAPI
-│       │   └── pages/
+│       │   └── views/
 │       │       ├── overview.py
 │       │       ├── trajectory.py
 │       │       ├── thermal.py

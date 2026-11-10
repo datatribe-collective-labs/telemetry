@@ -126,8 +126,8 @@ A real data source flows ingest -> TimescaleDB -> backend -> dashboard:
    `packages/backend/src/backend/api/routes/<source>.py` registered in
    `backend/api/__init__.py`.
 4. **Dashboard:** a client method in `dashboard/src/prototype/data/backend_api.py`, a
-   cached loader in `pages/_data.py`, the chart on a page, and its badge / summary /
-   explainer entries in `pages/_explain.py` (a unit test keeps those in sync).
+   cached loader in `views/_data.py`, the chart on a page, and its badge / summary /
+   explainer entries in `views/_explain.py` (a unit test keeps those in sync).
 5. **Tests:** unit tests under `tests/unit/pipelines/ingest/<source>/` and
    `tests/unit/backend/`.
 

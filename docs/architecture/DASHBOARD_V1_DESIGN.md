@@ -52,7 +52,7 @@ dashboard/src/prototype/
 │   ├── backend_api.py     # REST client (exists) — add caching wrappers here
 │   ├── mission_clock.py   # liftoff_utc from config → MET, mission phase labels
 │   └── trajectory_flyby.py# Earth/Moon ephemeris helpers, flyby event markers
-└── pages/
+└── views/
     ├── overview.py        # exists
     ├── trajectory.py      # exists → becomes flyby-centric in v1
     ├── thermal.py         # exists
