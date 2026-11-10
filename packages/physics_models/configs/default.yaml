@@ -1,8 +1,9 @@
 tick_hz: 1.0
 # Demo replay controls (also overridable via PHYSICS_MODELS_TIME_SCALE /
-# PHYSICS_MODELS_START_MET_SECONDS env vars)
+# PHYSICS_MODELS_START_MET_SECONDS / PHYSICS_MODELS_LOOP env vars)
 time_scale: 1.0
 start_met_seconds: 0.0
+loop: false  # true: start over from start_met_seconds at the end of the OEM arc
 kafka:
   bootstrap_servers: "localhost:9092"
   topics:

@@ -59,6 +59,8 @@ services:
       # Demo replay speed / seek (1.0 = real-time; 300 ≈ flyby in ~24 min)
       PHYSICS_MODELS_TIME_SCALE: ${PHYSICS_MODELS_TIME_SCALE:-1.0}
       PHYSICS_MODELS_START_MET_SECONDS: ${PHYSICS_MODELS_START_MET_SECONDS:-0.0}
+      # 1 = start over at the end of the NASA trajectory data (prod turns it on)
+      PHYSICS_MODELS_LOOP: ${PHYSICS_MODELS_LOOP:-0}
     depends_on:
       redpanda:
         condition: service_healthy

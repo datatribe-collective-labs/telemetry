@@ -42,6 +42,8 @@ Docker writes its own iptables rules, so a published port is reachable anyway.
   stays on `127.0.0.1:8080`, reached over `ssh -L 8080:localhost:8080 <server>`.
 - `restart: unless-stopped` on the long-running services (back after a crash or reboot),
   memory limits sized for an 8 GB server, log rotation (10 MB x 3 files per container).
+- The simulator runs the demo replay: from MET 12300 at x60, looping at the end of the
+  NASA trajectory data (see "Demo Replay Controls"; each can be overridden in `.env`).
 
 ```bash
 # .env on the server, in addition to the POSTGRES_* variables (see .env.example):
@@ -217,8 +219,8 @@ curl http://localhost:8501/_stcore/health
 
 ## Demo Replay Controls (physics_models)
 The simulator replays the mission from liftoff on the sim clock. Ticks stay 1 Hz on the
-wall clock; two knobs control in-mission speed and offset (also in `configs/*.yaml` as
-`time_scale` / `start_met_seconds`; env vars override):
+wall clock; three knobs control in-mission speed, offset and looping (also in
+`configs/*.yaml` as `time_scale` / `start_met_seconds` / `loop`; env vars override):
 
 ```bash
 # ×300 acceleration (mission day 5 reached in ~24 min)
@@ -230,9 +232,19 @@ PHYSICS_MODELS_START_MET_SECONDS=433800 docker compose up -d --force-recreate ph
 # Both at once: flyby starts ~now, running fast
 PHYSICS_MODELS_TIME_SCALE=300 PHYSICS_MODELS_START_MET_SECONDS=430000 docker compose up -d --force-recreate physics_models
 
+# Loop: at the end of the NASA trajectory data (atmospheric entry, Apr 10 23:53 UTC)
+# start over from START_MET_SECONDS instead of holding Orion there forever
+PHYSICS_MODELS_LOOP=1 PHYSICS_MODELS_START_MET_SECONDS=12300 PHYSICS_MODELS_TIME_SCALE=60 docker compose up -d --force-recreate physics_models
+
 # Back to real-time 1:1 replay
 docker compose up -d --force-recreate physics_models
 ```
+**Looping** (on in production, `docker-compose.prod.yml`: start 12300, ×60, so one loop
+of the flight takes ~3.5 h) restarts on exactly the same sim timestamps, so the
+consumer's upsert overwrites the previous loop's rows: the synthetic tables stay at
+one mission's worth of rows however long the demo runs. Thermal and power start fresh
+on each loop. Without it, the simulator keeps writing new timestamps after entry, with
+Orion frozen at the last point.
 Thermal/power dynamics scale with sim time (heater cycles, SOC curves stay physically
 meaningful); dashboards just plot the sim timestamps — nothing to change there.
 

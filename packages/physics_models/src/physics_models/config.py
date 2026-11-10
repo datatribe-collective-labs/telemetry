@@ -74,6 +74,8 @@ class PhysicsModelsConfig(BaseModel):
     """Simulation speed multiplier vs wall clock (1.0 = real-time, 600 = 10 min sim per wall-second)."""
     start_met_seconds: float = 0.0
     """Seek: simulation clock starts this many seconds after liftoff (e.g. 92620 ≈ TLI)."""
+    loop: bool = False
+    """Restart the replay from start_met_seconds when it passes the end of the OEM arc."""
     kafka: KafkaConfig = Field(default_factory=KafkaConfig)
     state_engine: StateEngineConfig = Field(default_factory=StateEngineConfig)
     thermal: ThermalConfig = Field(default_factory=ThermalConfig)
