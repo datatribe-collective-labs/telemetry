@@ -242,7 +242,9 @@ services:
       UV_FROZEN: "1"
       UV_LINK_MODE: copy
       PYTHONDONTWRITEBYTECODE: "1"
-    command: ["uv", "run", "--package", "pipelines", "pytest", "-p", "no:cacheprovider"]
+    # --all-packages: pytest collects every package's tests (backend, dashboard,
+    # physics_models, ...), so every package's dependencies must be installed.
+    command: ["uv", "run", "--all-packages", "pytest", "-p", "no:cacheprovider"]
 
   # Orion integration tests: the same read-only container as `tests`, plus the database
   # (and a live call to JPL Horizons). Run with: make test-orion
