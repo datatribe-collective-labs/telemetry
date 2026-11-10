@@ -28,6 +28,46 @@ Then load the real data (step 3). Demo replay knobs work the same way, e.g.
 The numbered steps below do the same thing piece by piece, and show how to run the
 backend and dashboard natively (steps 6-7) while working on their code.
 
+## Production: public server (`docker-compose.prod.yml`)
+
+`docker-compose.yml` is the laptop setup: it publishes the database (5433), Kafka
+(9092), backend (8000) and dashboard (8501) on every interface. On a public server
+that would put all of them on the internet, and **a host firewall (ufw) doesn't help**:
+Docker writes its own iptables rules, so a published port is reachable anyway.
+
+`docker-compose.prod.yml` is layered on top and changes only what production needs:
+- **Caddy is the only public service** (ports 80/443). It serves the dashboard over
+  HTTPS at `PUBLIC_HOSTNAME`, gets and renews the certificate itself, and redirects
+  HTTP to HTTPS (`infra/caddy/Caddyfile`). Every other port is removed; the Airflow UI
+  stays on `127.0.0.1:8080`, reached over `ssh -L 8080:localhost:8080 <server>`.
+- `restart: unless-stopped` on the long-running services (back after a crash or reboot),
+  memory limits sized for an 8 GB server, log rotation (10 MB x 3 files per container).
+
+```bash
+# .env on the server, in addition to the POSTGRES_* variables (see .env.example):
+#   PUBLIC_HOSTNAME=95-111-22-33.sslip.io     # the server IP with dashes + .sslip.io
+#   AIRFLOW_ADMIN_PASSWORD / AIRFLOW_JWT_SECRET / POSTGRES_PASSWORD: long random values
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile airflow up -d --build
+# Open https://<PUBLIC_HOSTNAME>
+```
+
+No domain needed: [sslip.io](https://sslip.io) resolves `95-111-22-33.sslip.io` to
+`95.111.22.33`, so Let's Encrypt can issue a real certificate for it. Moving to a real
+domain later is a change of `PUBLIC_HOSTNAME` (plus a DNS record). The `caddy_data`
+volume holds the certificates: keep it, or repeated re-issuing hits Let's Encrypt's
+rate limits.
+
+Try it locally with `PUBLIC_HOSTNAME=localhost` (Caddy then uses its own local CA, so the
+browser shows a certificate warning), as a separate project so it shares no containers
+or volumes with the dev stack:
+```bash
+PUBLIC_HOSTNAME=localhost docker compose -p telemetry-prod-check \
+  -f docker-compose.yml -f docker-compose.prod.yml --profile airflow up -d --build --wait
+# https://localhost works; 5433, 9092, 8000 and 8501 are refused
+PUBLIC_HOSTNAME=localhost docker compose -p telemetry-prod-check \
+  -f docker-compose.yml -f docker-compose.prod.yml --profile airflow down -v
+```
+
 ## Service Startup Order
 
 ### 0. One-time setup

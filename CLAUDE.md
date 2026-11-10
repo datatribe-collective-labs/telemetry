@@ -198,6 +198,9 @@ header above `$$SOE`, not inside the data block.
   `http://localhost:8000`). The Airflow services (`airflow-init`, `-apiserver` on
   `127.0.0.1:8080`, `-scheduler`, `-dag-processor`; metadata in an `airflow` database on
   the same TimescaleDB; FAB auth manager, user `admin`) are in the `airflow` profile.
+  `docker-compose.prod.yml` is the public-server override (#43): only Caddy
+  (`infra/caddy/Caddyfile`, HTTPS on `PUBLIC_HOSTNAME`) publishes ports, the rest are
+  `!reset`; keep dev ports in `docker-compose.yml` only (`RUN_SERVICES.md`, "Production").
   The `tests`/`orion-tests`/`airflow-tests` services are in the `test` profile; the DAG
   tests need Airflow, which doesn't run on native Windows, so they skip natively and run
   via `docker compose run --rm --build airflow-tests`. For code changes the backend and
