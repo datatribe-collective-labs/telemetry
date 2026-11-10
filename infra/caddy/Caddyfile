@@ -1,0 +1,7 @@
+# Caddy: the only public entry point in production (docker-compose.prod.yml, #43).
+# Gets and renews the HTTPS certificate for PUBLIC_HOSTNAME by itself and redirects
+# HTTP to HTTPS. Streamlit's WebSocket (/_stcore/stream) passes through reverse_proxy
+# without extra config.
+{$PUBLIC_HOSTNAME} {
+	reverse_proxy dashboard:8501
+}

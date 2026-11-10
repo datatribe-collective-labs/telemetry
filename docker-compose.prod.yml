@@ -1,0 +1,136 @@
+# docker-compose.prod.yml - production override for the public server (#43)
+#
+# Layered on top of docker-compose.yml, which stays the laptop setup:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile airflow up -d --build
+#
+# What it changes:
+# - Only Caddy publishes ports (80/443): it serves the dashboard over HTTPS at
+#   PUBLIC_HOSTNAME. Every other port is removed with `!reset` (an override file
+#   otherwise ADDS to `ports:` lists). Docker writes its own iptables rules, so a
+#   published port is reachable even when ufw blocks it: not publishing is the only fix.
+#   The Airflow UI keeps its 127.0.0.1:8080 binding from the base file (SSH tunnel).
+# - Restart policies, so the stack comes back after a crash or a reboot.
+# - Memory limits for an 8 GB server (about 6.9 GB in total, the rest for the OS and
+#   Docker; idle use is about 1.7 GB), and log rotation.
+#
+# Needs Docker Compose >= 2.24 (for `!reset`).
+
+# Every container: rotate logs at 10 MB, keep 3 files (default json-file never rotates).
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2.10.2-alpine
+    <<: *logging
+    restart: unless-stopped
+    environment:
+      # sslip.io name for the server IP, e.g. 95-111-22-33.sslip.io (real Let's Encrypt cert);
+      # `localhost` for a local check (Caddy's own CA, so the browser warns).
+      PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME:?set PUBLIC_HOSTNAME in .env}
+    ports:
+      - "80:80"           # ACME HTTP challenge + redirect to HTTPS
+      - "443:443"
+      - "443:443/udp"     # HTTP/3
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data        # certificates: keep, or Let's Encrypt rate limits bite
+      - caddy_config:/config
+    depends_on:
+      - dashboard
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+
+  dashboard:
+    <<: *logging
+    restart: unless-stopped
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  backend:
+    <<: *logging
+    restart: unless-stopped
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+  timescaledb:
+    <<: *logging
+    restart: unless-stopped
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
+  redpanda:
+    <<: *logging
+    restart: unless-stopped
+    ports: !reset []
+    deploy:
+      resources:
+        limits:
+          memory: 1536m   # redpanda itself is capped at --memory=1G
+
+  physics_models:
+    <<: *logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  physics_models_consumer:
+    <<: *logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+
+  # One-shot jobs: no restart policy (they must exit), just log rotation.
+  migrate:
+    <<: *logging
+
+  airflow-init:
+    <<: *logging
+
+  airflow-apiserver:
+    <<: *logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  airflow-scheduler:
+    <<: *logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1g      # LocalExecutor: the ingest tasks run in here, one at a time
+
+  airflow-dag-processor:
+    <<: *logging
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+
+volumes:
+  caddy_data:
+  caddy_config:

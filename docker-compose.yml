@@ -218,7 +218,10 @@ services:
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      # Over TCP, not the Unix socket: on a fresh volume the image first runs a temporary
+      # socket-only server for init and then restarts it, so a socket check reports
+      # healthy too early and the first clients get "connection refused".
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
