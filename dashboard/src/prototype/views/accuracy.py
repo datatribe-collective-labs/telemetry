@@ -54,7 +54,6 @@ def render(date_from, date_to):
         plot(fig)
 
     st.subheader("Raw data")
-    st.caption("Full API: http://localhost:8000/docs")
     with st.expander(f"Real trajectory, NASA/JPL ({len(real)} rows)"):
         st.dataframe(real, width="stretch", hide_index=True)
     with st.expander(f"Simulated state, newest 500 of {len(syn)} ticks"):
