@@ -8,13 +8,12 @@ Run directly: `uv run --package pipelines python -m pipelines.ingest.jpl_orion`
 """
 
 import argparse
-import io
 import math
 import os
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-import pandas as pd
 import psycopg
 import requests
 
@@ -77,15 +76,6 @@ class OrionRecord:
     range_rate_kms: float | None
 
 
-def _to_float(val: object) -> float | None:
-    if val is None or pd.isna(val) or val == "":
-        return None
-    try:
-        return float(val)
-    except (ValueError, TypeError):
-        return None
-
-
 def _parse_horizons_date(date_str: str) -> datetime:
     clean = date_str.replace("A.D.", "").replace("B.C.", "").strip()
     for fmt in ("%Y-%b-%d %H:%M:%S.%f", "%Y-%b-%d %H:%M:%S", "%Y-%b-%d %H:%M"):
@@ -95,6 +85,39 @@ def _parse_horizons_date(date_str: str) -> datetime:
         except ValueError:
             pass
     return datetime.fromisoformat(clean).replace(tzinfo=UTC)
+
+
+# Plain-text VECTORS block (VEC_TABLE 3), one epoch per four lines:
+#   2461132.583333333 = A.D. 2026-Apr-02 02:00:00.0000 UTC
+#    X =-2.472659704823027E+04 Y =-1.316405057554934E+04 Z =-7.164202187370159E+03
+#    VX=-1.777351358608879E+00 VY=-3.385561617695174E+00 VZ=-1.830422254985318E+00
+#    LT= 9.644690857497219E-02 RG= 2.891405578819219E+04 RR= 3.514867339500120E+00
+_EPOCH_LINE = re.compile(r"^\s*(?P<jd>\d+\.\d+)\s*=\s*(?P<date>A\.D\.\s+\S+\s+\S+)")
+_VALUE = re.compile(r"\b(X|Y|Z|VX|VY|VZ|LT|RG|RR)\s*=\s*(\S+)")
+_VECTOR_KEYS = ("X", "Y", "Z", "VX", "VY", "VZ", "LT", "RG", "RR")
+
+
+def _parse_vectors_block(block: str) -> list[tuple[float, str, dict[str, float]]]:
+    """(jd, calendar date, {X: ..., RR: ...}) per epoch.
+
+    Strict on purpose: an unrecognised line or a missing value raises, so a format
+    change on JPL's side fails the ingest instead of storing empty rows (#57).
+    """
+    epochs: list[tuple[float, str, dict[str, float]]] = []
+    for line in block.splitlines():
+        if not line.strip():
+            continue
+        if match := _EPOCH_LINE.match(line):
+            epochs.append((float(match["jd"]), match["date"], {}))
+        elif (values := _VALUE.findall(line)) and epochs:
+            epochs[-1][2].update({key: float(value) for key, value in values})
+        else:
+            raise ValueError(f"Unrecognised line in Horizons vectors: {line!r}")
+    for jd, date, values in epochs:
+        missing = [key for key in _VECTOR_KEYS if key not in values]
+        if missing:
+            raise ValueError(f"Horizons vectors for {date} are missing {missing}")
+    return epochs
 
 
 def fetch_orion_ephemeris(
@@ -126,7 +149,8 @@ def fetch_orion_ephemeris(
         "START_TIME": f"'{start_time}'",
         "STOP_TIME": f"'{stop_time}'",
         "STEP_SIZE": f"'{step_size}'",
-        "CSV_FORMAT": "YES",
+        # No CSV_FORMAT: since Nov 2026 Horizons' CSV output for VECTORS tables has only
+        # the two time columns (no X..RR, #57). The plain-text table still has them all.
     }
     response = requests.get(base_url, params=params, timeout=30)
     response.raise_for_status()
@@ -140,75 +164,25 @@ def fetch_orion_ephemeris(
         print("No ephemeris data markers ($$SOE / $$EOE) found in API response.")
         return []
 
-    # Horizons prints the CSV header *above* $$SOE (separated by a row of asterisks),
-    # so the block between the markers is data only. Take the header from the last
-    # comma-separated line before $$SOE; reading the block with the default header=0
-    # would consume the first data row as column names and drop that epoch.
-    head, rest = result_text.split("$$SOE", 1)
-    csv_data = rest.split("$$EOE")[0].strip()
-    header_line = next(
-        (line for line in reversed(head.splitlines()) if "," in line), None
-    )
-    if header_line is None:
-        raise ValueError("No CSV header line found above $$SOE in Horizons response.")
-    names = [name.strip() for name in header_line.split(",")]
-    df = pd.read_csv(
-        io.StringIO(csv_data), header=None, names=names, skipinitialspace=True
-    )
-    df = df.dropna(axis=1, how="all")
-    df = df.loc[:, [col for col in df.columns if col]]
-
-    def _get_col(candidates: list[str], default_idx: int) -> str:
-        for c in df.columns:
-            for cand in candidates:
-                if c == cand or c.startswith(cand):
-                    return c
-        for c in df.columns:
-            if any(cand in c for cand in candidates):
-                return c
-        if default_idx < len(df.columns):
-            return df.columns[default_idx]
-        raise ValueError(
-            f"Could not find matching column for {candidates} in {df.columns.tolist()}"
-        )
-
-    jd_col = _get_col(["JDTDB", "JD"], 0)
-    date_col = _get_col(["Calendar Date", "Calendar", "Date", "TDB"], 1)
-    x_col = _get_col(["X"], 2)
-    y_col = _get_col(["Y"], 3)
-    z_col = _get_col(["Z"], 4)
-    vx_col = _get_col(["VX"], 5)
-    vy_col = _get_col(["VY"], 6)
-    vz_col = _get_col(["VZ"], 7)
-    lt_col = _get_col(["LT"], 8)
-    rg_col = _get_col(["RG"], 9)
-    rr_col = _get_col(["RR"], 10)
-
-    records: list[OrionRecord] = []
-    for _, row in df.iterrows():
-        vx = _to_float(row[vx_col])
-        vy = _to_float(row[vy_col])
-        vz = _to_float(row[vz_col])
-        speed = math.sqrt(vx**2 + vy**2 + vz**2) if None not in (vx, vy, vz) else None
-
-        rec = OrionRecord(
+    block = result_text.split("$$SOE", 1)[1].split("$$EOE")[0]
+    return [
+        OrionRecord(
             target_id=command.strip("'"),
-            epoch=_parse_horizons_date(str(row[date_col])),
-            jd=_to_float(row[jd_col]) or 0.0,
-            x_km=_to_float(row[x_col]),
-            y_km=_to_float(row[y_col]),
-            z_km=_to_float(row[z_col]),
-            vx_kms=vx,
-            vy_kms=vy,
-            vz_kms=vz,
-            speed_kms=speed,
-            light_time_s=_to_float(row[lt_col]),
-            range_km=_to_float(row[rg_col]),
-            range_rate_kms=_to_float(row[rr_col]),
+            epoch=_parse_horizons_date(date),
+            jd=jd,
+            x_km=v["X"],
+            y_km=v["Y"],
+            z_km=v["Z"],
+            vx_kms=v["VX"],
+            vy_kms=v["VY"],
+            vz_kms=v["VZ"],
+            speed_kms=math.sqrt(v["VX"] ** 2 + v["VY"] ** 2 + v["VZ"] ** 2),
+            light_time_s=v["LT"],
+            range_km=v["RG"],
+            range_rate_kms=v["RR"],
         )
-        records.append(rec)
-
-    return records
+        for jd, date, v in _parse_vectors_block(block)
+    ]
 
 
 def upsert_orion_ephemeris(conn: psycopg.Connection, records: list[OrionRecord]) -> int:

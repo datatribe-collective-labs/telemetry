@@ -20,7 +20,7 @@ import psycopg
 
 from pipelines.db import get_connection
 
-# Same Horizons VECTORS request and CSV parsing as Orion; only the target differs.
+# Same Horizons VECTORS request and parsing as Orion; only the target differs.
 from pipelines.ingest.jpl_orion import fetch_orion_ephemeris
 
 MOON_ID = "301"
