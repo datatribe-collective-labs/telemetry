@@ -201,7 +201,8 @@ header above `$$SOE`, not inside the data block.
   `docker-compose.prod.yml` is the public-server override (#43): only Caddy
   (`infra/caddy/Caddyfile`, HTTPS on `PUBLIC_HOSTNAME`) publishes ports, the rest are
   `!reset`; keep dev ports in `docker-compose.yml` only (`RUN_SERVICES.md`, "Production").
-  The `tests`/`orion-tests`/`airflow-tests` services are in the `test` profile; the DAG
+  The `tests`/`orion-tests`/`airflow-tests` services are in the `test` profile (`orion-tests`
+  extends `tests` - same read-only image, plus the database - and runs `make test-orion`); the DAG
   tests need Airflow, which doesn't run on native Windows, so they skip natively and run
   via `docker compose run --rm --build airflow-tests`. For code changes the backend and
   dashboard can still run natively via `uv run` (`BACKEND_RELOAD=1` turns on uvicorn reload; see `RUN_SERVICES.md`). `packages/pipelines/Dockerfile` installs no JDK -
