@@ -34,7 +34,6 @@ def test_fetch_orion_ephemeris_requests_eme2000_ut_vectors(vectors_result):
                     "START_TIME": "'2026-04-02 02:00'",
                     "STOP_TIME": "'2026-04-10 23:00'",
                     "STEP_SIZE": "'1 h'",
-                    "CSV_FORMAT": "YES",
                 }
             )
         ],
@@ -82,12 +81,23 @@ def test_fetch_orion_ephemeris_raises_on_http_error():
 
 
 @responses.activate
-def test_fetch_orion_ephemeris_raises_without_csv_header():
+def test_fetch_orion_ephemeris_raises_on_dates_only_csv(dates_only_csv_result):
     responses.add(
-        responses.GET,
-        DEFAULT_BASE_URL,
-        json={"result": "no header here\n$$SOE\n1,2,3\n$$EOE\n"},
+        responses.GET, DEFAULT_BASE_URL, json={"result": dates_only_csv_result}
     )
 
-    with pytest.raises(ValueError, match="No CSV header"):
+    with pytest.raises(ValueError, match="Unrecognised line"):
+        fetch_orion_ephemeris()
+
+
+@responses.activate
+def test_fetch_orion_ephemeris_raises_on_missing_vector_values(vectors_result):
+    without_light_time_line = "\n".join(
+        line for line in vectors_result.splitlines() if not line.startswith(" LT=")
+    )
+    responses.add(
+        responses.GET, DEFAULT_BASE_URL, json={"result": without_light_time_line}
+    )
+
+    with pytest.raises(ValueError, match=r"missing \['LT', 'RG', 'RR'\]"):
         fetch_orion_ephemeris()
