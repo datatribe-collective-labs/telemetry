@@ -31,11 +31,11 @@ the Mission page shows them as grey "Not simulated yet" tiles instead of a statu
 
 Every chart carries data-source badges (**Real** / **Synthetic** / **Placeholder**),
 a one-line plain-language summary and an "About this chart" expander. All three
-live in `pages/_explain.py` (`SOURCES`, `SUMMARIES`, `EXPLAINERS`), keyed by the
+live in `views/_explain.py` (`SOURCES`, `SUMMARIES`, `EXPLAINERS`), keyed by the
 name passed to `explain("<page>.<chart>")`; unit tests fail if a page uses a key
 that is missing there, or if text exists for a chart no page shows.
 
-Shared helpers (`pages/_*.py`): `_controls` (sidebar, mission constants),
+Shared helpers (`views/_*.py`): `_controls` (sidebar, mission constants),
 `_data` (cached fetches that page through the backend's 1,000-row limit),
 `_trajectory` (map, readout, real-vs-simulated separation), `_timeline`
 (shading intervals, line breaks at replay jumps), `_status` (plain-language

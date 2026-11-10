@@ -312,7 +312,7 @@ dashboard/src/prototype/
 │   ├── backend_api.py        # REST client for FastAPI
 │   ├── synthetic.py          # Synthetic telemetry queries
 │   └── real_data/            # Real data queries (orion.py, etc.)
-├── pages/
+├── views/
 │   ├── welcome.py            # Landing
 │   ├── overview.py           # Health + all_nominal
 │   ├── trajectory.py         # Real vs Synthetic comparison
