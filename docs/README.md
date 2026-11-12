@@ -30,6 +30,7 @@ For *running* the services, see the root [`RUN_SERVICES.md`](../RUN_SERVICES.md)
 
 | Doc | Read this when… |
 |-----|-----------------|
+| [guides/UPCLOUD_DEPLOYMENT.md](guides/UPCLOUD_DEPLOYMENT.md) | You're putting the demo on a server: the UpCloud runbook (server, firewall, `.env`, first deploy, operations, recovery). |
 | [guides/TIMELINE_FACTCHECK_CHECKLIST.md](guides/TIMELINE_FACTCHECK_CHECKLIST.md) | **Manual task:** verify all 108 extracted attitude segments against the timeline PDF — generated mechanically from the code, with anchors and known gaps already flagged. |
 | [guides/DEBUG_DOCKER_PHYSICS_MODELS.md](guides/DEBUG_DOCKER_PHYSICS_MODELS.md) | Historical record of the Docker asyncio/signal hang — **resolved 2026-10-19**; keep for debugging technique reference only. |
 

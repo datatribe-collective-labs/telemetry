@@ -202,7 +202,8 @@ CSV header above `$$SOE`, not inside the data block.
   the same TimescaleDB; FAB auth manager, user `admin`) are in the `airflow` profile.
   `docker-compose.prod.yml` is the public-server override (#43): only Caddy
   (`infra/caddy/Caddyfile`, HTTPS on `PUBLIC_HOSTNAME`) publishes ports, the rest are
-  `!reset`; keep dev ports in `docker-compose.yml` only (`RUN_SERVICES.md`, "Production").
+  `!reset`; keep dev ports in `docker-compose.yml` only (`RUN_SERVICES.md`, "Production";
+  the UpCloud runbook is `docs/guides/UPCLOUD_DEPLOYMENT.md`).
   The `tests`/`orion-tests`/`airflow-tests` services are in the `test` profile (`orion-tests`
   extends `tests` - same read-only image, plus the database - and runs `make test-orion`); the DAG
   tests need Airflow, which doesn't run on native Windows, so they skip natively and run

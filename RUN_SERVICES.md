@@ -30,6 +30,9 @@ backend and dashboard natively (steps 6-7) while working on their code.
 
 ## Production: public server (`docker-compose.prod.yml`)
 
+Step by step on UpCloud (server, firewall, `.env`, first deploy, operations):
+[`docs/guides/UPCLOUD_DEPLOYMENT.md`](docs/guides/UPCLOUD_DEPLOYMENT.md).
+
 `docker-compose.yml` is the laptop setup: it publishes the database (5433), Kafka
 (9092), backend (8000) and dashboard (8501) on every interface. On a public server
 that would put all of them on the internet, and **a host firewall (ufw) doesn't help**:
