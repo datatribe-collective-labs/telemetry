@@ -13,6 +13,8 @@
 # - Restart policies, so the stack comes back after a crash or a reboot.
 # - Memory limits for an 8 GB server (about 6.9 GB in total, the rest for the OS and
 #   Docker; idle use is about 1.7 GB), and log rotation.
+# - AIRFLOW_JWT_SECRET and AIRFLOW_ADMIN_PASSWORD are required: the base file falls
+#   back to dev-only values, which must not end up on a server unnoticed.
 #
 # Needs Docker Compose >= 2.24 (for `!reset`).
 
@@ -23,6 +25,10 @@ x-logging: &logging
     options:
       max-size: "10m"
       max-file: "3"
+
+# Every Airflow service: no fallback to the base file's dev-only JWT secret.
+x-airflow-jwt: &airflow-jwt
+  AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:?set AIRFLOW_JWT_SECRET in .env (openssl rand -hex 32)}
 
 services:
   caddy:
@@ -113,9 +119,13 @@ services:
 
   airflow-init:
     <<: *logging
+    environment:
+      <<: *airflow-jwt
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?set AIRFLOW_ADMIN_PASSWORD in .env (openssl rand -hex 32)}
 
   airflow-apiserver:
     <<: *logging
+    environment: *airflow-jwt
     restart: unless-stopped
     deploy:
       resources:
@@ -124,6 +134,7 @@ services:
 
   airflow-scheduler:
     <<: *logging
+    environment: *airflow-jwt
     restart: unless-stopped
     deploy:
       resources:
@@ -132,6 +143,7 @@ services:
 
   airflow-dag-processor:
     <<: *logging
+    environment: *airflow-jwt
     restart: unless-stopped
     deploy:
       resources:
