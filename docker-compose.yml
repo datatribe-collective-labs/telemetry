@@ -42,6 +42,11 @@ services:
       - --reserve-memory=0M
       - --overprovisioned
       - --node-id=1
+      # Keep messages 1 h, not the 7-day default: the consumer reads them live, and at
+      # 1 msg/s on 4 topics a week of them fills GBs of disk (there's no volume, so it's
+      # the container's own layer). Redpanda deletes whole closed segments.
+      - --set
+      - redpanda.log_retention_ms=3600000
     ports:
       - "9092:9092"
     healthcheck:
@@ -210,7 +215,9 @@ services:
       start_period: 30s
 
   timescaledb:
-    image: timescale/timescaledb:latest-pg16
+    # Pinned (tag + digest), not `latest-pg16`: a fresh server must get the version the
+    # stack was tested with. An image older than the DB's extension can't load it.
+    image: timescale/timescaledb:2.29.2-pg16@sha256:289d55704b1b3ee8263cd3805c6930f9cd54506835a8f19f9b85dad17d5c5a8a
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}

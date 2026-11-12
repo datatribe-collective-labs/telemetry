@@ -49,6 +49,7 @@ Docker writes its own iptables rules, so a published port is reachable anyway.
 # .env on the server, in addition to the POSTGRES_* variables (see .env.example):
 #   PUBLIC_HOSTNAME=95-111-22-33.sslip.io     # the server IP with dashes + .sslip.io
 #   AIRFLOW_ADMIN_PASSWORD / AIRFLOW_JWT_SECRET / POSTGRES_PASSWORD: long random values
+#   (the prod file refuses to start without the two AIRFLOW_* ones)
 docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile airflow up -d --build
 # Open https://<PUBLIC_HOSTNAME>
 ```
@@ -63,10 +64,12 @@ Try it locally with `PUBLIC_HOSTNAME=localhost` (Caddy then uses its own local C
 browser shows a certificate warning), as a separate project so it shares no containers
 or volumes with the dev stack:
 ```bash
-PUBLIC_HOSTNAME=localhost docker compose -p telemetry-prod-check \
+# The prod file requires the Airflow secrets; throwaway values are fine for this check
+export PUBLIC_HOSTNAME=localhost AIRFLOW_JWT_SECRET=local-check AIRFLOW_ADMIN_PASSWORD=local-check
+docker compose -p telemetry-prod-check \
   -f docker-compose.yml -f docker-compose.prod.yml --profile airflow up -d --build --wait
 # https://localhost works; 5433, 9092, 8000 and 8501 are refused
-PUBLIC_HOSTNAME=localhost docker compose -p telemetry-prod-check \
+docker compose -p telemetry-prod-check \
   -f docker-compose.yml -f docker-compose.prod.yml --profile airflow down -v
 ```
 
