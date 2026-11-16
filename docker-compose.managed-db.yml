@@ -1,0 +1,28 @@
+# docker-compose.managed-db.yml - use an external PostgreSQL (UpCloud Managed PostgreSQL
+# with the TimescaleDB extension) instead of the `timescaledb` container (#46).
+#
+# Layered last, on the server only, via its .env:
+#
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml:docker-compose.managed-db.yml
+#   POSTGRES_HOST=<the database's hostname>
+#   POSTGRES_PORT=<its port>
+#   POSTGRES_SSLMODE=require
+#   POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB = the managed database's credentials
+#
+# The password goes into connection URLs: if it has characters other than letters and
+# digits, URL-encode it (or reset it to a hex one in the console).
+# Back to the container: drop this file from COMPOSE_FILE (its volume is untouched).
+
+x-require-host: &require-host
+  # Without POSTGRES_HOST every service would look for the `timescaledb` container
+  # left out below and fail with a confusing name-resolution error.
+  POSTGRES_HOST: ${POSTGRES_HOST:?set POSTGRES_HOST in .env to the managed database}
+
+services:
+  timescaledb:
+    # Not started: no service enables this profile. The depends_on entries on it in
+    # docker-compose.yml are `required: false`.
+    profiles: ["local-db"]
+
+  migrate:
+    environment: *require-host
