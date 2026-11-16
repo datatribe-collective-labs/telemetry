@@ -1,0 +1,207 @@
+{
+  "uid": "telemetry-ops",
+  "title": "Telemetry ops",
+  "description": "Is the demo's data fresh? Synthetic data (simulator -> Redpanda -> consumer), real data (Airflow ingest jobs), and the database. Read-only; provisioned from infra/grafana/dashboards.",
+  "tags": ["telemetry", "ops"],
+  "timezone": "utc",
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": { "from": "now-6h", "to": "now" },
+  "schemaVersion": 39,
+  "panels": [
+    {
+      "id": 1,
+      "type": "bargauge",
+      "title": "Synthetic data: seconds since last write",
+      "description": "Per table, how long ago the consumer last wrote a row (ingested_at). The simulator publishes about once a second, so anything over a few minutes means the simulator, Redpanda or the consumer has stopped. Empty = never written (placeholder model).",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT t AS \"table\", EXTRACT(EPOCH FROM now() - last)::int AS \"seconds ago\"\nFROM (\n  SELECT 'state_snapshot' AS t, max(ingested_at) AS last FROM state_snapshot\n  UNION ALL SELECT 'thermal_output', max(ingested_at) FROM thermal_output\n  UNION ALL SELECT 'power_output', max(ingested_at) FROM power_output\n  UNION ALL SELECT 'comms_output', max(ingested_at) FROM comms_output\n  UNION ALL SELECT 'radiation_output', max(ingested_at) FROM radiation_output\n  UNION ALL SELECT 'cross_model_state', max(ingested_at) FROM cross_model_state\n  UNION ALL SELECT 'telemetry_packet', max(ingested_at) FROM telemetry_packet\n  UNION ALL SELECT 'ml_feature_vectors', max(ingested_at) FROM ml_feature_vectors\n  UNION ALL SELECT 'anomaly_events', max(ingested_at) FROM anomaly_events\n) s\nORDER BY 1"
+        }
+      ],
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "reduceOptions": { "values": true, "calcs": [], "fields": "/seconds ago/" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "max": 600,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 120 },
+              { "color": "red", "value": 300 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Real data: last ingested",
+      "description": "When each ingest job last wrote its table. The daily refresh (DONKI, GOES protons, JPL CAD) runs at 00:00 UTC, so over 36 h means it failed: see the Airflow UI. Backfill tables change only when the real_data_backfill DAG is run by hand.",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT t AS \"table\", schedule, last AS \"last written\",\n       round((EXTRACT(EPOCH FROM now() - last) / 3600)::numeric, 1) AS \"hours ago\"\nFROM (\n  SELECT 'close_approaches (JPL CAD)' AS t, 'daily' AS schedule, max(ingested_at) AS last FROM close_approaches\n  UNION ALL SELECT 'donki_events (NASA DONKI)', 'daily', max(fetched_at) FROM donki_events\n  UNION ALL SELECT 'goes_integral_protons (NASA iSWA)', 'daily', max(ingested_at) FROM goes_integral_protons\n  UNION ALL SELECT 'orion_ephemeris (JPL Horizons)', 'backfill', max(ingested_at) FROM orion_ephemeris\n  UNION ALL SELECT 'moon_ephemeris (JPL Horizons)', 'backfill', max(ingested_at) FROM moon_ephemeris\n  UNION ALL SELECT 'dsn_site_geometry (JPL Horizons)', 'backfill', max(ingested_at) FROM dsn_site_geometry\n  UNION ALL SELECT 'oem_state_vectors (NASA OEM)', 'backfill', max(ingested_at) FROM oem_state_vectors\n  UNION ALL SELECT 'mission_events (timeline)', 'backfill', max(ingested_at) FROM mission_events\n) s\nORDER BY schedule DESC, 1"
+        }
+      ],
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "hours ago" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-background", "mode": "basic" } },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "orange", "value": 26 },
+                    { "color": "red", "value": 36 }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Synthetic rows written per minute (state_snapshot)",
+      "description": "Rows the consumer wrote per minute. A flat line at zero = the pipeline stopped; a gap = the database was unreachable.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 10 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT time_bucket('1 minute', ingested_at) AS time, count(*) AS \"rows per minute\"\nFROM state_snapshot\nWHERE $__timeFilter(ingested_at)\nGROUP BY 1\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "bars", "fillOpacity": 60 } },
+        "overrides": []
+      },
+      "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Airflow: latest DAG runs",
+      "description": "The 15 most recent runs of the ingest DAGs (real_data_refresh: daily; real_data_backfill: by hand). Details and logs: the Airflow UI.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 10 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "airflow-db" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "airflow-db" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT dag_id AS \"DAG\", run_type AS \"type\", state, start_date AS \"started\",\n       EXTRACT(EPOCH FROM end_date - start_date)::int AS \"seconds\"\nFROM dag_run\nORDER BY start_date DESC NULLS LAST\nLIMIT 15"
+        }
+      ],
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "state" },
+            "properties": [
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "success": { "color": "green", "index": 0 },
+                      "failed": { "color": "red", "index": 1 },
+                      "running": { "color": "blue", "index": 2 },
+                      "queued": { "color": "orange", "index": 3 }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Rows per table",
+      "description": "Exact row counts of every table in the telemetry database (the tables are small).",
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 19 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT table_name AS \"table\",\n       (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I.%I', table_schema, table_name), false, true, '')))[1]::text::bigint AS \"rows\"\nFROM information_schema.tables\nWHERE table_schema = 'public' AND table_type = 'BASE TABLE'\nORDER BY 1"
+        }
+      ],
+      "options": { "showHeader": true, "cellHeight": "sm" },
+      "fieldConfig": { "defaults": {}, "overrides": [] }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Database size",
+      "description": "Size of the telemetry and airflow databases (the managed plan has 10 GiB).",
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 19 },
+      "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT pg_database_size('telemetry') AS \"telemetry\", pg_database_size('airflow') AS \"airflow\""
+        }
+      ],
+      "options": {
+        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value_and_name"
+      },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }
+    }
+  ]
+}

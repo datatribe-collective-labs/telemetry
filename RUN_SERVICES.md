@@ -64,6 +64,16 @@ the TimescaleDB extension and Airflow its `airflow` database), and the `timescal
 container isn't started. Without the file, nothing changes: the defaults are the container
 (`timescaledb:5432`, `sslmode=prefer`).
 
+**Ops dashboard** (Grafana, #46): `docker-compose.grafana.yml` is another opt-in file: one
+read-only "Telemetry ops" dashboard (data freshness, Airflow runs, row counts), provisioned
+from `infra/grafana/`, on `127.0.0.1:3000`. It needs `GRAFANA_ADMIN_PASSWORD`,
+`GRAFANA_DB_USER` and `GRAFANA_DB_PASSWORD` (a read-only user on the server; on a laptop the
+`POSTGRES_*` user is fine):
+```bash
+GRAFANA_ADMIN_PASSWORD=admin GRAFANA_DB_USER=$POSTGRES_USER GRAFANA_DB_PASSWORD=$POSTGRES_PASSWORD \
+  docker compose -f docker-compose.yml -f docker-compose.grafana.yml up -d grafana
+```
+
 No domain needed: [sslip.io](https://sslip.io) resolves `95-111-22-33.sslip.io` to
 `95.111.22.33`, so Let's Encrypt can issue a real certificate for it. Moving to a real
 domain later is a change of `PUBLIC_HOSTNAME` (plus a DNS record). The `caddy_data`

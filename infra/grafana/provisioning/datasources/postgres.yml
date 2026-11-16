@@ -1,0 +1,32 @@
+# Grafana datasources (read-only database user, see docs/guides/UPCLOUD_DEPLOYMENT.md).
+# $VARS come from the grafana service's environment in docker-compose.yml.
+apiVersion: 1
+
+datasources:
+  - name: Telemetry DB
+    uid: telemetry-db
+    type: grafana-postgresql-datasource
+    url: $GF_DB_HOST:$GF_DB_PORT
+    user: $GF_DB_USER
+    secureJsonData:
+      password: $GF_DB_PASSWORD
+    jsonData:
+      database: $GF_DB_NAME
+      sslmode: $GF_DB_SSLMODE
+      postgresVersion: 1600
+      timescaledb: true
+    isDefault: true
+    editable: false
+
+  - name: Airflow DB
+    uid: airflow-db
+    type: grafana-postgresql-datasource
+    url: $GF_DB_HOST:$GF_DB_PORT
+    user: $GF_DB_USER
+    secureJsonData:
+      password: $GF_DB_PASSWORD
+    jsonData:
+      database: airflow
+      sslmode: $GF_DB_SSLMODE
+      postgresVersion: 1600
+    editable: false
