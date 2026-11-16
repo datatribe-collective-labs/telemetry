@@ -57,6 +57,13 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile airflo
 # Open https://<PUBLIC_HOSTNAME>
 ```
 
+**External database** (UpCloud Managed PostgreSQL, #46): add `docker-compose.managed-db.yml`
+as a third file and set `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_SSLMODE=require` and the
+database's credentials in `.env`. Every service then connects there (the migrations create
+the TimescaleDB extension and Airflow its `airflow` database), and the `timescaledb`
+container isn't started. Without the file, nothing changes: the defaults are the container
+(`timescaledb:5432`, `sslmode=prefer`).
+
 No domain needed: [sslip.io](https://sslip.io) resolves `95-111-22-33.sslip.io` to
 `95.111.22.33`, so Let's Encrypt can issue a real certificate for it. Moving to a real
 domain later is a change of `PUBLIC_HOSTNAME` (plus a DNS record). The `caddy_data`

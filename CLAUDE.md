@@ -203,7 +203,10 @@ CSV header above `$$SOE`, not inside the data block.
   `docker-compose.prod.yml` is the public-server override (#43): only Caddy
   (`infra/caddy/Caddyfile`, HTTPS on `PUBLIC_HOSTNAME`) publishes ports, the rest are
   `!reset`; keep dev ports in `docker-compose.yml` only (`RUN_SERVICES.md`, "Production";
-  the UpCloud runbook is `docs/guides/UPCLOUD_DEPLOYMENT.md`).
+  the UpCloud runbook is `docs/guides/UPCLOUD_DEPLOYMENT.md`). `docker-compose.managed-db.yml`
+  (third file, opt-in via `POSTGRES_HOST`/`PORT`/`SSLMODE` in `.env`) points every service at
+  an external PostgreSQL (UpCloud Managed PostgreSQL, #46) and leaves the `timescaledb`
+  container out; the base file's `depends_on` entries on it are `required: false` for that.
   The `tests`/`orion-tests`/`airflow-tests` services are in the `test` profile (`orion-tests`
   extends `tests` - same read-only image, plus the database - and runs `make test-orion`); the DAG
   tests need Airflow, which doesn't run on native Windows, so they skip natively and run

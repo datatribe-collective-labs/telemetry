@@ -1,6 +1,11 @@
+# Database: the `timescaledb` container by default. POSTGRES_HOST / POSTGRES_PORT /
+# POSTGRES_SSLMODE in .env point every service at an external PostgreSQL instead, together
+# with docker-compose.managed-db.yml, which leaves the container out (hence the
+# `required: false` on the depends_on entries below).
+#
 # Airflow (profile "airflow"): schedules the real-data ingest jobs (airflow/dags/).
 # LocalExecutor, so tasks run inside the scheduler container; metadata in a separate
-# `airflow` database on the timescaledb container. UI: http://localhost:8080 (user admin).
+# `airflow` database on the same PostgreSQL. UI: http://localhost:8080 (user admin).
 x-airflow-common: &airflow-common
   build:
     context: .
@@ -11,7 +16,7 @@ x-airflow-common: &airflow-common
   environment: &airflow-common-env
     AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
-    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/airflow
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-timescaledb}:${POSTGRES_PORT:-5432}/airflow?sslmode=${POSTGRES_SSLMODE:-prefer}
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     # Unpaused, so the daily refresh runs unattended (the backfill has no schedule).
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
@@ -20,12 +25,13 @@ x-airflow-common: &airflow-common
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-dev-only-change-me}
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
     # For the ingest jobs themselves (pipelines.db reads DATABASE_URL)
-    DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/${POSTGRES_DB}
+    DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-timescaledb}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}?sslmode=${POSTGRES_SSLMODE:-prefer}
   volumes:
     - airflow_logs:/opt/airflow/logs
   depends_on:
     timescaledb:
       condition: service_healthy
+      required: false
     airflow-init:
       condition: service_completed_successfully
 
@@ -71,13 +77,14 @@ services:
         condition: service_healthy
       timescaledb:
         condition: service_healthy
+        required: false
 
   physics_models_consumer:
     build:
       context: .
       dockerfile: packages/physics_models/Dockerfile.consumer
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-timescaledb}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}?sslmode=${POSTGRES_SSLMODE:-prefer}
       KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
     depends_on:
       redpanda:
@@ -95,10 +102,11 @@ services:
     working_dir: /app/packages/backend
     command: ["/app/.venv/bin/alembic", "upgrade", "head"]
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-timescaledb}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}?sslmode=${POSTGRES_SSLMODE:-prefer}
     depends_on:
       timescaledb:
         condition: service_healthy
+        required: false
 
   backend:
     build:
@@ -106,7 +114,7 @@ services:
       dockerfile: packages/backend/Dockerfile
     image: telemetry-backend
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST:-timescaledb}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}?sslmode=${POSTGRES_SSLMODE:-prefer}
     ports:
       - "8000:8000"
     healthcheck:
@@ -144,6 +152,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: ${POSTGRES_HOST:-timescaledb}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_SSLMODE: ${POSTGRES_SSLMODE:-prefer}
       AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
     command:
       - bash
@@ -152,7 +163,8 @@ services:
         set -e
         python - <<'PY'
         import os, psycopg2
-        conn = psycopg2.connect(host="timescaledb", user=os.environ["POSTGRES_USER"],
+        conn = psycopg2.connect(host=os.environ["POSTGRES_HOST"], port=os.environ["POSTGRES_PORT"],
+                                sslmode=os.environ["POSTGRES_SSLMODE"], user=os.environ["POSTGRES_USER"],
                                 password=os.environ["POSTGRES_PASSWORD"], dbname=os.environ["POSTGRES_DB"])
         conn.autocommit = True
         with conn.cursor() as cur:
@@ -172,6 +184,7 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
+        required: false
 
   airflow-apiserver:
     <<: *airflow-common
@@ -193,6 +206,7 @@ services:
     depends_on:
       timescaledb:
         condition: service_healthy
+        required: false
       airflow-init:
         condition: service_completed_successfully
       airflow-apiserver:
