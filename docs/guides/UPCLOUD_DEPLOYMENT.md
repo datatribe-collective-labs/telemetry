@@ -312,6 +312,7 @@ All commands from `~/telemetry` as `deploy`.
 | Roll back | `git checkout <commit>`, then the same `up` command (later `git switch main`) |
 | Airflow UI | On your computer: `ssh -L 8080:localhost:8080 deploy@<server-ip>`, then http://localhost:8080 (user `admin`, `AIRFLOW_ADMIN_PASSWORD`) |
 | New Airflow admin password | Change it in `.env`, then `docker compose up -d --force-recreate airflow-init` |
+| Ops dashboard (Grafana) | On your computer: `ssh -L 3000:localhost:3000 deploy@<server-ip>`, then http://localhost:3000 (user `admin`, `GRAFANA_ADMIN_PASSWORD`); setup below |
 | Database shell | `set -a; . ./.env; set +a; docker run --rm -it -e PGPASSWORD="$POSTGRES_PASSWORD" postgres:16-alpine psql "host=$POSTGRES_HOST port=$POSTGRES_PORT user=$POSTGRES_USER dbname=telemetry sslmode=require"` |
 | Reboot after updates | When `/var/run/reboot-required` exists: `sudo reboot` |
 
@@ -322,6 +323,44 @@ the managed database, the database itself. `docker compose down` without `-v` is
 **Weekly check:** in the Airflow UI, the daily `real_data_refresh` runs are green
 (a failing source doesn't alert anyone, its data just goes stale), and `df -h /`
 has room.
+
+## Ops dashboard (Grafana)
+
+One read-only dashboard, "Telemetry ops" (`infra/grafana/`): how many seconds ago each
+synthetic table was written, when each real-data table was last ingested (daily ones
+over 36 h = a failed refresh), rows written per minute, the latest Airflow runs, row
+counts and database size. No alerts (they'd need an SMTP account: UpCloud blocks port 25).
+Private like the Airflow UI; about 220 MB of memory. Set up once, on the server:
+
+```bash
+cd ~/telemetry
+cat >> .env <<EOF
+
+# Grafana ops dashboard: docker-compose.grafana.yml
+GRAFANA_ADMIN_PASSWORD=$(openssl rand -hex 32)
+GRAFANA_DB_USER=grafana_ro
+GRAFANA_DB_PASSWORD=$(openssl rand -hex 32)
+EOF
+
+# A read-only database user for it (Grafana's query editor runs any SQL its user may)
+set -a; . ./.env; set +a
+PG() { docker run --rm -i -e PGPASSWORD="$POSTGRES_PASSWORD" postgres:16-alpine psql \
+  "host=$POSTGRES_HOST port=$POSTGRES_PORT user=$POSTGRES_USER dbname=$1 sslmode=require" -v ON_ERROR_STOP=1 "${@:2}"; }
+PG defaultdb -v pw="$GRAFANA_DB_PASSWORD" <<'SQL'
+SELECT format('CREATE ROLE grafana_ro LOGIN PASSWORD %L', :'pw') \gexec
+GRANT CONNECT ON DATABASE telemetry, airflow TO grafana_ro;
+SQL
+for db in telemetry airflow; do PG $db <<'SQL'
+GRANT USAGE ON SCHEMA public TO grafana_ro;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO grafana_ro;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO grafana_ro;
+SQL
+done
+```
+
+Then add `:docker-compose.grafana.yml` to the end of `COMPOSE_FILE` in `.env`, run
+`docker compose up -d --wait`, and copy `GRAFANA_ADMIN_PASSWORD` into the password
+manager. `ALTER DEFAULT PRIVILEGES` covers tables created later (by `upadmin`).
 
 ## Troubleshooting
 

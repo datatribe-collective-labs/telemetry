@@ -1,0 +1,62 @@
+# docker-compose.grafana.yml - read-only ops dashboard (#46): is the demo's data fresh?
+#
+# Opt-in extra file, provisioned from infra/grafana/ (datasources + one dashboard, no
+# alerts). Its own file, not a profile: compose checks the `:?` variables below even for
+# a disabled service, which would break every setup that doesn't use Grafana.
+#
+#   Server:  add it to COMPOSE_FILE in .env (see docs/guides/UPCLOUD_DEPLOYMENT.md), then
+#            UI over `ssh -L 3000:localhost:3000 deploy@<server-ip>`: http://localhost:3000
+#   Laptop:  GRAFANA_ADMIN_PASSWORD=admin GRAFANA_DB_USER=<POSTGRES_USER> GRAFANA_DB_PASSWORD=<POSTGRES_PASSWORD> \
+#              docker compose -f docker-compose.yml -f docker-compose.grafana.yml up -d grafana
+#
+# GRAFANA_DB_USER should be a read-only database user: Grafana's query editor can run any
+# SQL the user is allowed to.
+
+services:
+  grafana:
+    image: grafana/grafana:13.3.1@sha256:0615ec4fbd4072004b7d86b46ded63013a74b7d6eb1119273dd89e8fa25c13cf
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env (openssl rand -hex 32)}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/telemetry-ops.json
+      # Read by infra/grafana/provisioning/datasources/postgres.yml. Grafana knows no
+      # sslmode "prefer": the timescaledb container has no SSL, so "disable" by default.
+      GF_DB_HOST: ${POSTGRES_HOST:-timescaledb}
+      GF_DB_PORT: ${POSTGRES_PORT:-5432}
+      GF_DB_SSLMODE: ${POSTGRES_SSLMODE:-disable}
+      GF_DB_NAME: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      GF_DB_USER: ${GRAFANA_DB_USER:?set GRAFANA_DB_USER in .env (a read-only database user)}
+      GF_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?set GRAFANA_DB_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:3000:3000"   # localhost only: SSH tunnel on the server
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/health | grep -q ok"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+        required: false
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 512m    # ~180 MB idle
+
+volumes:
+  grafana_data:

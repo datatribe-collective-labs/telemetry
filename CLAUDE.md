@@ -207,6 +207,9 @@ CSV header above `$$SOE`, not inside the data block.
   (third file, opt-in via `POSTGRES_HOST`/`PORT`/`SSLMODE` in `.env`) points every service at
   an external PostgreSQL (UpCloud Managed PostgreSQL, #46) and leaves the `timescaledb`
   container out; the base file's `depends_on` entries on it are `required: false` for that.
+  `docker-compose.grafana.yml` (another opt-in file) adds a read-only Grafana "Telemetry ops"
+  dashboard provisioned from `infra/grafana/` (127.0.0.1:3000, no alerts). Opt-in files
+  rather than profiles: compose checks `:?` variables even for a disabled service.
   The `tests`/`orion-tests`/`airflow-tests` services are in the `test` profile (`orion-tests`
   extends `tests` - same read-only image, plus the database - and runs `make test-orion`); the DAG
   tests need Airflow, which doesn't run on native Windows, so they skip natively and run
