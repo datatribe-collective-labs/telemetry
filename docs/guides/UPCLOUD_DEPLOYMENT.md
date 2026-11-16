@@ -116,6 +116,16 @@ date -u > /var/log/telemetry-init.done
 | 2 | Accept | TCP | All IPv4 addresses | all | 80 |
 | 3 | Accept | TCP | All IPv4 addresses | all | 443 |
 | 4 | Accept | UDP | All IPv4 addresses | all | 443 (HTTP/3) |
+| 5 | Accept | UDP | `94.237.127.9` (UpCloud DNS) | **53** | all |
+| 6 | Accept | UDP | `94.237.40.9` (UpCloud DNS) | **53** | all |
+| 7 | Accept | UDP | All IPv4 addresses | **123** | all |
+
+Rules 5-7 let the **replies** to the server's own DNS and time (NTP) queries back in:
+the console firewall tracks TCP connections but not UDP, so with "Drop all" every DNS
+answer is dropped (the image builds fail with `dns error`, and the clock stops
+syncing). Note the *source* port is set and the target port is "all", the opposite of
+rules 1-4. The DNS addresses are the resolvers the server is given (`resolvectl dns`
+on the server); check them in UpCloud's documentation if they differ.
 
 Leave the target address at "All IPv4 addresses". Then set the **incoming default
 rule** to **Drop all** and keep the **outgoing default rule** at **Accept all**
@@ -130,10 +140,7 @@ The firewall runs outside the server. It is the second layer: the production
 compose file already publishes only Caddy's 80/443, and that matters because
 Docker bypasses the server's own firewall (ufw), so ufw is not used.
 
-The server's own outbound requests (DNS, `git`, `apt`, image pulls, the NASA/JPL
-APIs) must still get their replies. Step 3 checks this. If name lookups fail there,
-add Accept rules for UpCloud's DNS resolvers (listed in the console and UpCloud's
-firewall documentation) and check again.
+Firewall changes take up to a minute to apply.
 
 If your IP changes later, update the port 22 rule. If you're locked out, log in
 through the console's web terminal as `deploy` with the password set in step 3.
@@ -149,7 +156,9 @@ ssh deploy@<server-ip>
 
 cat /var/log/telemetry-init.done           # the init script finished
 docker compose version                     # v2.24 or newer (the prod file needs it)
-getent hosts github.com                    # DNS works through the firewall
+docker run --rm busybox:1.37 nslookup pypi.org   # DNS works through the firewall (rules 5-6);
+                                           # not `getent` on the host: it can answer from cache
+timedatectl show -p NTPSynchronized        # yes (rule 7; can take a minute)
 free -h                                    # Swap: 2.0Gi
 sudo sshd -T | grep -E '^(passwordauthentication|permitrootlogin) '   # both "no"
 
@@ -270,6 +279,7 @@ has room.
 | Symptom | Look at |
 |---|---|
 | No HTTPS / certificate error | `docker compose logs caddy`: ports 80/443 open in the firewall? `getent hosts <PUBLIC_HOSTNAME>` gives the server IP? |
+| Build fails with `dns error` / `failed to lookup address` | Firewall rules 5-6 (step 2) missing; the running app is untouched, rerun the `up` after adding them |
 | Mission page error | The backfill (step 6) hasn't run or failed: see the Airflow UI |
 | `!reset` error on `up` | Docker Compose older than 2.24: `sudo apt-get install --only-upgrade docker-compose-plugin` |
 | `required variable ... is missing a value` | A variable is missing in `.env` (step 4) |
