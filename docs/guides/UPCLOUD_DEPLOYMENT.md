@@ -1,21 +1,23 @@
 # Deploying the Digital Twin demo to UpCloud
 
-A runbook for putting the whole app on one UpCloud Cloud Server, using the UpCloud
-web console (no Terraform). The result is the public demo: the **Digital Twin
-dashboard over HTTPS** at `https://<ip-with-dashes>.sslip.io`. The database, Kafka,
-backend and Airflow UI are not reachable from the internet.
+A runbook for putting the whole app on one UpCloud Cloud Server plus an UpCloud
+Managed PostgreSQL database, using the UpCloud web console (no Terraform). The result
+is the public demo: the **Digital Twin dashboard over HTTPS** at
+`https://<ip-with-dashes>.sslip.io`. The database, Kafka, backend and Airflow UI are not
+reachable from the internet.
 
 It runs the existing `docker-compose.yml` with the production override
-`docker-compose.prod.yml` (see `RUN_SERVICES.md`, "Production"). Nothing is
-installed on the server besides Docker.
+`docker-compose.prod.yml` and `docker-compose.managed-db.yml` (see `RUN_SERVICES.md`,
+"Production"). Nothing is installed on the server besides Docker.
 
 ```
-Internet --80/443--> UpCloud firewall --> Caddy (HTTPS) --> dashboard --> backend --> TimescaleDB
-                     (22: your IP only)    physics_models --> Redpanda --> consumer --^
-                                           Airflow (daily ingest of NASA/JPL data) --^
+Internet --80/443--> UpCloud firewall --> Caddy (HTTPS) --> dashboard --> backend --+
+                     (22: your IP only)    physics_models --> Redpanda --> consumer -+--> Managed PostgreSQL
+                                           Airflow (daily ingest of NASA/JPL data) -+    (TimescaleDB; utility
+                                                                                          network, no public access)
 ```
 
-Time: about 30 minutes, most of it the first image build. Part of #47 (#45).
+Time: about 45 minutes, most of it the first image build. Part of #47 (#45, #46).
 
 ## 0. Before you start
 
@@ -145,6 +147,28 @@ Firewall changes take up to a minute to apply.
 If your IP changes later, update the port 22 rule. If you're locked out, log in
 through the console's web terminal as `deploy` with the password set in step 3.
 
+## 2b. Database (console)
+
+**Databases → Create**, in the **same location as the server**:
+
+| Setting | Value |
+|---|---|
+| Type / version | **PostgreSQL 16** (TimescaleDB is one of its supported extensions) |
+| Compute | **Developer**: 1 core / **2 GiB** (the data is tens of MB) |
+| Storage | 10 GiB |
+| Nodes | **Single node** (a second one is a standby that doubles the price) |
+| Public connection | **off** |
+| Private connection | **Utility network** (leave "Attach private network" alone: that's for SDN networks) |
+| Automatic access from Utility network servers | **on** (lets the server in) |
+| Allow access from all IPs | off; no CIDRs needed |
+| Maintenance schedule | a quiet slot, e.g. Sunday 05:00 UTC (a single node is briefly unavailable then) |
+| Termination protection | **on** (turn it off before deleting, see "Shutting down") |
+| Service name / hostname prefix | `telemetry-db` / a unique prefix, e.g. `dtc-telemetry-db` (can't be changed later) |
+
+Check that the summary says about €14/month, not the larger default. It takes a few
+minutes to start; when it's **Running**, note the **host, port, user** (`upadmin`) and
+**password** from its overview page; the password goes to the password manager.
+
 ## 3. First login and checks
 
 `<server-ip>` is the **public IPv4** address on the server's overview page. The
@@ -161,6 +185,8 @@ docker run --rm busybox:1.37 nslookup pypi.org   # DNS works through the firewal
 timedatectl show -p NTPSynchronized        # yes (rule 7; can take a minute)
 free -h                                    # Swap: 2.0Gi
 sudo sshd -T | grep -E '^(passwordauthentication|permitrootlogin) '   # both "no"
+getent hosts <db-host>                     # a 10.x address (the utility network)
+timeout 5 bash -c 'exec 3<>/dev/tcp/<db-host>/<db-port>' && echo db port open
 
 sudo passwd deploy     # a password for the console's web terminal only (SSH stays key-only);
                        # store it in the password manager
@@ -179,29 +205,51 @@ cd ~/telemetry
 IP=$(ip -4 route get 1.1.1.1 | awk '{for (i = 1; i < NF; i++) if ($i == "src") print $(i + 1)}')
 echo "$IP"
 
+# The database's password from the console: pasted, not shown, not in the shell history
+read -rs -p "Managed DB password: " DBPW; echo
+
+umask 077
 cat > .env <<EOF
 # Every docker compose command on this server uses the production setup
-COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml
+COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml:docker-compose.managed-db.yml
 COMPOSE_PROFILES=airflow
 
-POSTGRES_USER=telemetry
+# UpCloud Managed PostgreSQL (step 2b)
+POSTGRES_HOST=<db-host>
+POSTGRES_PORT=<db-port>
+POSTGRES_SSLMODE=require
+POSTGRES_USER=upadmin
 POSTGRES_DB=telemetry
-POSTGRES_PASSWORD=$(openssl rand -hex 32)
+POSTGRES_PASSWORD=$DBPW
+
 AIRFLOW_ADMIN_PASSWORD=$(openssl rand -hex 32)
 AIRFLOW_JWT_SECRET=$(openssl rand -hex 32)
 
 PUBLIC_HOSTNAME=${IP//./-}.sslip.io
 EOF
-chmod 600 .env
+unset DBPW
+
+# One-time: the `telemetry` database (the managed service starts with `defaultdb` only).
+# The migrations create the TimescaleDB extension; airflow-init creates `airflow`.
+set -a; . ./.env; set +a
+docker run --rm -e PGPASSWORD="$POSTGRES_PASSWORD" postgres:16-alpine psql \
+  "host=$POSTGRES_HOST port=$POSTGRES_PORT user=upadmin dbname=defaultdb sslmode=require" \
+  -c 'CREATE DATABASE telemetry'
 ```
 
 - `COMPOSE_FILE` / `COMPOSE_PROFILES` make a plain `docker compose ...` on the server
-  mean "production plus Airflow", so the laptop setup (which publishes the database
-  and Kafka ports) can't start by accident. The commands below rely on it.
-- Copy the three secrets into the password manager (open `.env` in your own SSH
+  mean "production plus Airflow, on the managed database", so the laptop setup (which
+  publishes the database and Kafka ports) can't start by accident. The commands below
+  rely on it.
+- `password authentication failed` means the pasted password doesn't match the
+  console's: copy it again from the database's overview page. It goes into connection
+  URLs as is, so it must be URL-safe (UpCloud's generated ones are).
+- Copy the two Airflow secrets into the password manager (open `.env` in your own SSH
   session). The server is the only other copy.
-- `POSTGRES_PASSWORD` is applied only when the database volume is first created;
-  changing it later in `.env` alone breaks the connections.
+- Without a managed database (the container instead): leave out the third
+  `COMPOSE_FILE` entry and the `POSTGRES_HOST`/`PORT`/`SSLMODE` lines, and use
+  `POSTGRES_USER=telemetry`, `POSTGRES_PASSWORD=$(openssl rand -hex 32)`. That password
+  is applied only when the database volume is first created.
 - [sslip.io](https://sslip.io) resolves `95-111-22-33.sslip.io` to `95.111.22.33`,
   so Let's Encrypt can issue a real certificate without a domain. With a domain
   later, set `PUBLIC_HOSTNAME` to it (and point an A record at the server).
@@ -264,11 +312,12 @@ All commands from `~/telemetry` as `deploy`.
 | Roll back | `git checkout <commit>`, then the same `up` command (later `git switch main`) |
 | Airflow UI | On your computer: `ssh -L 8080:localhost:8080 deploy@<server-ip>`, then http://localhost:8080 (user `admin`, `AIRFLOW_ADMIN_PASSWORD`) |
 | New Airflow admin password | Change it in `.env`, then `docker compose up -d --force-recreate airflow-init` |
+| Database shell | `set -a; . ./.env; set +a; docker run --rm -it -e PGPASSWORD="$POSTGRES_PASSWORD" postgres:16-alpine psql "host=$POSTGRES_HOST port=$POSTGRES_PORT user=$POSTGRES_USER dbname=telemetry sslmode=require"` |
 | Reboot after updates | When `/var/run/reboot-required` exists: `sudo reboot` |
 
-**Never run `docker compose down -v`**: `-v` deletes the database and the HTTPS
-certificates (`caddy_data`; re-issuing them repeatedly hits Let's Encrypt's rate
-limits). `docker compose down` without `-v` is safe.
+**Never run `docker compose down -v`**: `-v` deletes the HTTPS certificates
+(`caddy_data`; re-issuing them repeatedly hits Let's Encrypt's rate limits) and, without
+the managed database, the database itself. `docker compose down` without `-v` is safe.
 
 **Weekly check:** in the Airflow UI, the daily `real_data_refresh` runs are green
 (a failing source doesn't alert anyone, its data just goes stale), and `df -h /`
@@ -283,31 +332,74 @@ has room.
 | Mission page error | The backfill (step 6) hasn't run or failed: see the Airflow UI |
 | `!reset` error on `up` | Docker Compose older than 2.24: `sudo apt-get install --only-upgrade docker-compose-plugin` |
 | `required variable ... is missing a value` | A variable is missing in `.env` (step 4) |
+| `migrate` / `airflow-init` exit 1: `password authentication failed` | `POSTGRES_PASSWORD` in `.env` doesn't match the console's |
+| `could not translate host name` / connection timeout to the database | `POSTGRES_HOST`/`PORT` in `.env`; the database is Running, in the server's location, with "Automatic access from Utility network servers" on |
+| `database "telemetry" does not exist` | The one-time `CREATE DATABASE telemetry` (step 4) |
 | A container keeps restarting | `docker compose logs <service>`; an `OOMKilled` in `docker inspect <container>` means it hit its memory limit |
 | Disk full | `docker system df`, then `docker image prune -f && docker builder prune -f` |
 
 ## Backups and recovery
 
-No automated backups yet (#46: nightly `pg_dump` to UpCloud Object Storage). Until
-then:
-- **The data is reproducible:** the real data comes back with the backfill (step 6),
-  as long as the NASA/JPL sources still serve it; the synthetic data is
+- **The managed database is backed up by UpCloud** (included in the price; the
+  database's page in the console shows the backups and how to restore them).
+  The server itself holds no data: only `.env` (in the password manager too) and the
+  HTTPS certificates, which Caddy re-issues.
+- **The data is also reproducible:** the real data comes back with the backfill
+  (step 6), as long as the NASA/JPL sources still serve it; the synthetic data is
   regenerated by the simulator.
-- **Recovery** is this runbook on a new server, with the `.env` values from the
-  password manager.
-- **A manual copy** before risky changes:
-  `docker compose exec -T timescaledb pg_dump -U telemetry -Fc telemetry > ~/telemetry-$(date +%F).dump`
+- **Recovery** of the server is this runbook on a new server (steps 1-6, skipping 2b),
+  with the `.env` values from the password manager.
+- **A manual copy** before risky changes (after `set -a; . ./.env; set +a`):
+  `docker run --rm -e PGPASSWORD="$POSTGRES_PASSWORD" postgres:16-alpine pg_dump "host=$POSTGRES_HOST port=$POSTGRES_PORT user=$POSTGRES_USER dbname=telemetry sslmode=require" -Fc > ~/telemetry-$(date +%F).dump`
+
+## Moving an existing server to the managed database
+
+What was done on the demo server on 2026-11-16 (outage about 70 s). Data isn't copied:
+the migrations and the backfill rebuild it, the simulator regenerates the synthetic
+data, and Airflow starts with an empty run history.
+
+1. Step 2b (create the database), the two network checks from step 3, and the one-time
+   `CREATE DATABASE telemetry` from step 4.
+2. `git pull` (the server needs `docker-compose.managed-db.yml`), then
+   `cp -p .env .env.container-db` (the rollback).
+3. In `.env`: add `docker-compose.managed-db.yml` to `COMPOSE_FILE`, add
+   `POSTGRES_HOST`/`PORT`/`SSLMODE=require`, and set `POSTGRES_USER=upadmin` and the
+   database's `POSTGRES_PASSWORD`. Check with `docker compose config --services`: no
+   `timescaledb`.
+4. `docker compose stop`, then `docker compose up -d --wait` (the old database container
+   stays stopped, its volume untouched), then step 6 and step 7.
+5. **Roll back** (if needed): `cp .env.container-db .env && docker compose up -d --wait`.
+6. **After a week or so of stable running:** remove the old container and volume:
+   `docker rm telemetry-timescaledb-1 && docker volume rm telemetry_timescaledb_data`,
+   and delete `.env.container-db` (it holds the old password).
+
+## Shutting down (end of the project)
+
+Both are billed until deleted (a stopped Starter server too).
+
+1. Optional: a last database copy ("A manual copy" above), downloaded to your computer.
+2. **Database:** in its settings turn **termination protection off**, then delete it.
+3. **Server:** delete it **with its storage**.
+4. Remove the server's and the database's entries from the password manager.
 
 ## Costs
 
-Approximate list prices for 4 vCPU / 8 GB; check them in the console:
-**Starter** ~€20/month, **Premium** ~€52/month. The firewall and the public IPv4
-address come with the server. Starter and Premium servers are billed even when
-powered off: to stop paying, delete the server and its disk (keep `.env` first).
+Approximate list prices; check them in the console:
+
+| Resource | €/month |
+|---|---|
+| Server, 4 vCPU / 8 GB: **Starter** (shared CPU, 40 GB) / Premium (dedicated, 100 GB) | ~20 / ~52 |
+| Managed PostgreSQL, Developer 1 core / 2 GiB, 10 GiB, single node (backups included) | ~14.40 |
+
+The firewall, the public IPv4 address and the utility network come with the server.
 
 ## Accepted risks (demo scope)
 
 - One server: if it fails, the demo is down until it's redeployed.
+- A single-node database: briefly unavailable in its weekly maintenance window, and
+  down until UpCloud restores it if the node fails.
+- `sslmode=require` encrypts the database connections but doesn't verify the server's
+  certificate; the traffic stays on UpCloud's utility network.
 - No rate limiting on the public dashboard.
 - sslip.io is a third-party service; some company networks block sslip.io names.
   A real domain removes both.
