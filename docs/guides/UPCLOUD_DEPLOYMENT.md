@@ -39,7 +39,7 @@ Time: about 30 minutes, most of it the first image build. Part of #47 (#45).
 |---|---|
 | Location | Close to the demo audience (e.g. `de-fra1`, `fi-hel1`, `us-nyc1`) |
 | Plan | **4 vCPU / 8 GB**: *Starter* (cheapest, shared CPU, 40 GB disk) or *Premium* (dedicated, 100 GB). See "Costs" below. |
-| Operating system | **Ubuntu Server 24.04 LTS** |
+| Operating system | **Ubuntu Server 26.04 LTS** (used on the first deploy) or 24.04 LTS |
 | Storage | The plan's default disk |
 | Login method | **SSH key**: add the contents of your `.pub` file |
 | Hostname | `telemetry-demo` |
@@ -107,16 +107,24 @@ date -u > /var/log/telemetry-init.done
 
 ## 2. Firewall (console)
 
-**Servers → telemetry-demo → Firewall**: turn the firewall on and add, in this order:
+**Servers → telemetry-demo → Firewall**: turn the firewall on and, under
+**Incoming traffic rules → Edit rules**, add in this order:
 
-| Direction | Action | Protocol | Port | Source |
-|---|---|---|---|---|
-| In | Accept | TCP | 22 | **your IP** (`/32`) |
-| In | Accept | TCP | 80 | any (IPv4 and IPv6) |
-| In | Accept | TCP | 443 | any (IPv4 and IPv6) |
-| In | Accept | UDP | 443 | any (IPv4 and IPv6), HTTP/3 |
-| Default in | **Drop** | | | |
-| Default out | Accept | | | |
+| # | Action | Protocol | Source address | Source port | Target port |
+|---|---|---|---|---|---|
+| 1 | Accept | TCP | **your IP** (IPv4, e.g. `203.0.113.7`) | all | 22 |
+| 2 | Accept | TCP | All IPv4 addresses | all | 80 |
+| 3 | Accept | TCP | All IPv4 addresses | all | 443 |
+| 4 | Accept | UDP | All IPv4 addresses | all | 443 (HTTP/3) |
+
+Leave the target address at "All IPv4 addresses". Then set the **incoming default
+rule** to **Drop all** and keep the **outgoing default rule** at **Accept all**
+(UpCloud's own outgoing "SMTP blocked" rule can stay).
+
+A console rule is either IPv4 or IPv6, and IPv4 is enough: the
+`<ip-with-dashes>.sslip.io` name resolves only to the server's IPv4 address, so
+neither visitors nor Let's Encrypt reach it over IPv6. With a real domain that has an
+AAAA record, add rules 2-4 again for IPv6.
 
 The firewall runs outside the server. It is the second layer: the production
 compose file already publishes only Caddy's 80/443, and that matters because
@@ -131,6 +139,10 @@ If your IP changes later, update the port 22 rule. If you're locked out, log in
 through the console's web terminal as `deploy` with the password set in step 3.
 
 ## 3. First login and checks
+
+`<server-ip>` is the **public IPv4** address on the server's overview page. The
+console also lists an SDN address: that's UpCloud's private network between your own
+servers, not reachable from your computer.
 
 ```bash
 ssh deploy@<server-ip>
