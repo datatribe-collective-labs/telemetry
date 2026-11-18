@@ -3,10 +3,37 @@
 import pytest
 from physics_models.power.physics import (
     PowerModel,
+    compute_available_power,
     compute_battery_soc,
     compute_power_balance,
     compute_solar_array_power,
+    compute_temperature_derating,
 )
+
+
+class TestTemperatureDerating:
+    """Test solar array temperature derating."""
+
+    def test_compute_temperature_derating_no_loss_at_or_below_25c(self):
+        assert compute_temperature_derating(298.15) == pytest.approx(1.0)
+        assert compute_temperature_derating(200.0) == pytest.approx(1.0)
+
+    def test_compute_temperature_derating_half_percent_per_degree_above_25c(self):
+        assert compute_temperature_derating(298.15 + 20.0) == pytest.approx(0.9)
+
+    def test_compute_temperature_derating_floored_at_half(self):
+        assert compute_temperature_derating(1000.0) == pytest.approx(0.5)
+
+
+class TestAvailablePower:
+    """Test available-power headroom (ODCS 03 available_power_w)."""
+
+    def test_compute_available_power_subtracts_essential_floor(self):
+        assert compute_available_power(10_000.0, 0.92, 800.0) == pytest.approx(8_400.0)
+
+    def test_compute_available_power_never_negative(self):
+        assert compute_available_power(500.0, 0.92, 800.0) == 0.0
+        assert compute_available_power(0.0, 0.92, 800.0) == 0.0
 
 
 class TestSolarArrayPower:
@@ -287,8 +314,37 @@ class TestPowerModel:
         
         assert v_cold > v_hot
 
-    def test_available_power(self, model):
-        """Available power should include array + battery capability."""
+    def test_init_array_efficiency_starts_at_bol(self):
+        model = PowerModel(array_efficiency_bol=0.27)
+        assert model.array_efficiency == pytest.approx(0.27)
+
+    def test_step_array_efficiency_includes_temperature_and_degradation(self, model):
+        model.step(
+            solar_flux=1361.0,
+            incidence_angle_deg=0.0,
+            eclipse_fraction=0.0,
+            total_load_w=1000.0,
+            dt=60.0,
+            electronics_bay_temp_k=318.15,  # 45°C -> 0.9 derating
+            degradation_factor=0.8,
+        )
+        assert model.array_efficiency == pytest.approx(0.30 * 0.9 * 0.8)
+
+    def test_step_array_efficiency_matches_array_power(self, model):
+        """Reported efficiency is the one used for array power (face-on, sunlit)."""
+        model.step(
+            solar_flux=1361.0,
+            incidence_angle_deg=0.0,
+            eclipse_fraction=0.0,
+            total_load_w=1000.0,
+            dt=60.0,
+            electronics_bay_temp_k=330.0,
+            degradation_factor=0.9,
+        )
+        expected = 1361.0 * model.array_area_m2 * model.array_efficiency
+        assert model.array_power_w == pytest.approx(expected, rel=1e-9)
+
+    def test_step_available_power_is_headroom_above_essential_floor(self, model):
         model.step(
             solar_flux=1361.0,
             incidence_angle_deg=0.0,
@@ -298,12 +354,34 @@ class TestPowerModel:
             electronics_bay_temp_k=293.15,
             degradation_factor=1.0,
         )
-        
-        # Available = array + max discharge capability
-        max_discharge_power = model.max_discharge_current_a * model.battery_voltage_v
-        expected_available = model.array_power_w + max_discharge_power
-        
-        assert model.available_power_w == pytest.approx(expected_available, rel=1e-3)
+        expected = model.array_power_w * 0.92 - 800.0
+        assert model.available_power_w == pytest.approx(expected, rel=1e-9)
+
+    def test_step_available_power_zero_in_eclipse(self, model):
+        model.step(
+            solar_flux=1361.0,
+            incidence_angle_deg=0.0,
+            eclipse_fraction=1.0,
+            total_load_w=1000.0,
+            dt=60.0,
+            electronics_bay_temp_k=293.15,
+            degradation_factor=1.0,
+        )
+        assert model.available_power_w == 0.0
+
+    def test_step_available_power_within_contract_bounds_at_physics_ceiling(self):
+        """Default model at 1 AU, face-on, BOL stays within 0 ≤ available ≤ ~15,000 W."""
+        model = PowerModel()
+        model.step(
+            solar_flux=1361.0,
+            incidence_angle_deg=0.0,
+            eclipse_fraction=0.0,
+            total_load_w=1200.0,
+            dt=60.0,
+            electronics_bay_temp_k=293.15,
+        )
+        assert 0.0 <= model.available_power_w <= 15_000.0
+        assert model.available_power_w == pytest.approx(model.array_power_w * 0.92 - 800.0)
 
 
 if __name__ == "__main__":
