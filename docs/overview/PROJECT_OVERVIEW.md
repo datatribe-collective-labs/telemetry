@@ -63,16 +63,17 @@ Physics Models (1 Hz) → Kafka (Redpanda) → Consumer → TimescaleDB → Back
 
 | Gap | Owner | Status |
 |-----|-------|--------|
-| Comms Generator | Rafaela | Not implemented — placeholder values emitted by runner |
+| Comms Generator | Rafaela | ✅ S-band link budget (`physics_models/comms/`, #20); DSN visibility not applied yet |
 | Radiation Generator | Rafaela | Not implemented — placeholder values emitted by runner |
 | Packet Assembler | Rafaela | Not implemented — runner assembles inline |
 | Anomaly Detector + ML Features | — | Skeleton only — placeholder values; `events` topic absent |
 | WebSocket Endpoints (`/ws/live`, `/ws/events`) | Backend | Not implemented |
 | State/Thermal/Power wiring | — | ✅ Done 2026-10-19 (OEM-driven state engine, ThermalModel3Node, PowerModel live) |
 
-> ⚠️ Comms/radiation/packet/ml_features rows above still reflect **placeholder data** from
+> ⚠️ Radiation/packet/ml_features rows above still reflect **placeholder data** from
 > `runner.py` — they validate the *pipeline*, not model correctness. Trajectory, thermal and
-> power however are real model outputs driven by the NASA OEM arcs since 2026-10-19.
+> power however are real model outputs driven by the NASA OEM arcs since 2026-10-19, and comms
+> since #20.
 
 ### 2.4 📋 Key Technical Decisions (Locked In)
 
@@ -298,7 +299,7 @@ flowchart LR
 | `trajectory` | `SyntheticStateSnapshot` | StateEngine | position, velocity, solar_flux, eclipse, DSN vis | Mission, Model accuracy |
 | `telemetry` | `SyntheticThermalOutput` | Thermal (3-node) | T_sun, T_shadow, T_bay, q_solar, q_rad, heater | Spacecraft health |
 | `telemetry` | `SyntheticPowerOutput` | Power | array_W, SOC, V, I, net_W, available_W, state | Spacecraft health |
-| `telemetry` | `SyntheticCommsOutput` | Comms (TBD) | EIRP, FSPL, Eb/N0, margin, rate, SQ, state | Comms |
+| `telemetry` | `SyntheticCommsOutput` | Comms (`CommsModel`) | EIRP, FSPL, Eb/N0, margin, rate, SQ, state | Comms |
 | `telemetry` | `SyntheticRadiationOutput` | Radiation (TBD) | dose_rate, cumulative, degradation_factors, SEP | Radiation |
 | `telemetry` | `SyntheticTelemetryPacket` | PacketAssembler | All combined + all_nominal | - (Mission reads thermal/power directly) |
 | `cross_model_state` | `SyntheticCrossModelState` | CrossModelBus | coupling variables (1-tick lag) | Coupling Debug |
@@ -358,7 +359,7 @@ telemetry/
 │   │       ├── state_engine/
 │   │       ├── thermal/
 │   │       ├── power/
-│   │       ├── comms/                # placeholder (not implemented)
+│   │       ├── comms/                # S-band link budget (CommsModel)
 │   │       ├── radiation/            # placeholder (not implemented)
 │   │       ├── cross_model/
 │   │       ├── anomaly/              # placeholder (not implemented)

@@ -12,7 +12,7 @@ ODCS contracts in `packages/contracts/src/odcs/`, and surfaced on a dashboard.
 Effort #1 (the digital twin) is partially built and runnable end-to-end (see
 `RUN_SERVICES.md`, `docs/integration/PIPELINE_STATUS.md`, `docs/overview/PROJECT_OVERVIEW.md`): `packages/contracts`
 contains Pydantic models matching the ODCS contracts; `packages/physics_models`
-generates synthetic telemetry (state engine, thermal, power are implemented; comms,
+generates synthetic telemetry (state engine, thermal, power and comms are implemented;
 radiation, packet assembler and anomaly/ML are still placeholders emitted by
 `runner.py`); it publishes to Redpanda (Kafka) which a consumer persists into
 TimescaleDB; `packages/backend` is a working FastAPI with 28 REST endpoints; and
@@ -121,10 +121,9 @@ on disk that breaks subsequent native Windows `uv run` with `Access is denied` o
    physics models (thermal, power, comms, radiation), publishing a unified telemetry
    packet. Fully specified via ODCS data contracts in `packages/contracts/src/odcs/`
    (numbered `01_state_engine` ... `05_anomaly_ml_features`). Implemented so far:
-   `contracts` Pydantic models, `physics_models` state/thermal/power generators +
+   `contracts` Pydantic models, `physics_models` state/thermal/power/comms generators +
    Kafka producer/consumer, `backend` REST API, `dashboard/src/prototype` Streamlit
-   views. Comms/radiation/packet/anomaly generators remain placeholders
-   (other contributors).
+   views. Radiation/packet/anomaly generators remain placeholders.
 2. **Real data path** (`packages/pipelines`): a working, lightweight batch ETL that
    ingests public NASA/JPL data (JPL CAD, JPL Horizons for Orion, the Moon and DSN
    geometry, NASA DONKI, GOES proton flux via NASA iSWA, plus the local NASA OEM arcs

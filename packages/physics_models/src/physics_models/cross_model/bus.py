@@ -22,9 +22,10 @@ class CrossModelBus:
 
     Thermal -> Power: electronics_bay_temp_k
     Power -> Thermal: power_dissipation_w
+    Power -> Comms: available_power_w
     Radiation -> Power: solar_array_degradation_factor
     Radiation -> Thermal: thermal_coating_alpha_factor, thermal_coating_eps_factor
-    Radiation -> Comms: plasma_noise_factor (via signal_quality proxy)
+    Radiation -> Comms: plasma_noise_factor (1.0 until the radiation model provides it)
     """
 
     # Thermal -> Power
@@ -33,6 +34,9 @@ class CrossModelBus:
     # Power -> Thermal
     power_dissipation_w: float = 0.0
 
+    # Power -> Comms (None before the first power tick)
+    available_power_w: float | None = None
+
     # Radiation -> Power
     solar_array_degradation_factor: float = 1.0
 
@@ -40,7 +44,8 @@ class CrossModelBus:
     thermal_coating_alpha_factor: float = 1.0
     thermal_coating_eps_factor: float = 1.0
 
-    # Radiation -> Comms (proxy via signal quality)
+    # Radiation -> Comms (contract 04). SyntheticRadiationOutput has no such field yet,
+    # so this stays 1.0 (no degradation) until the radiation model provides it.
     plasma_noise_factor: float = 1.0
 
     # For building SyntheticCrossModelState output
@@ -68,10 +73,10 @@ class CrossModelBus:
         # Update coupling variables for NEXT tick
         self.electronics_bay_temp_k = thermal.temp_electronics_bay_k
         self.power_dissipation_w = power.total_load_w
+        self.available_power_w = power.available_power_w
         self.solar_array_degradation_factor = radiation.solar_array_degradation
         self.thermal_coating_alpha_factor = radiation.thermal_alpha_degradation
         self.thermal_coating_eps_factor = radiation.thermal_eps_degradation
-        self.plasma_noise_factor = comms.signal_quality
 
     def to_cross_model_state(self, timestamp_utc) -> SyntheticCrossModelState:
         """Build the cross-model state output for this tick."""
@@ -79,7 +84,7 @@ class CrossModelBus:
             timestamp_utc=timestamp_utc,
             electronics_bay_temp_k=self.electronics_bay_temp_k,
             power_dissipation_w=self.power_dissipation_w,
-            available_power_w=self._last_power.available_power_w if self._last_power else 0.0,
+            available_power_w=self.available_power_w if self.available_power_w is not None else 0.0,
             solar_array_degradation_factor=self.solar_array_degradation_factor,
             thermal_coating_alpha_factor=self.thermal_coating_alpha_factor,
             thermal_coating_eps_factor=self.thermal_coating_eps_factor,
@@ -90,6 +95,7 @@ class CrossModelBus:
         """Reset to initial conditions."""
         self.electronics_bay_temp_k = 293.15
         self.power_dissipation_w = 0.0
+        self.available_power_w = None
         self.solar_array_degradation_factor = 1.0
         self.thermal_coating_alpha_factor = 1.0
         self.thermal_coating_eps_factor = 1.0
