@@ -169,13 +169,13 @@ The **ODCS contracts are the single source of truth**. The Pydantic models in `c
 |-------|-----------|----------|-----|----------|----------------------|------------------------------|
 | `timestamp_utc` | `TIMESTAMP WITH TIME ZONE` | ✅ | ✅ | | `nullValues=0` | ✅ Passed to `step()` |
 | `solar_array_power_W` | `DOUBLE` | ✅ | | | `nullValues=0`, ≥0, =0 in UMBRA, ≤17,100W (physics ceiling: 1361×44.8×0.28) | ✅ `compute_solar_array_power()` |
-| `array_efficiency` | `DOUBLE` | ✅ | | | `nullValues=0`, 0.0 ≤ η ≤ 1.0 by definition | ✅ `array_efficiency` (temp derating) |
+| `array_efficiency` | `DOUBLE` | ✅ | | | `nullValues=0`, 0.0 ≤ η ≤ 1.0 by definition | ✅ `array_efficiency` = η_BOL × `compute_temperature_derating()` × degradation, updated each `step()` |
 | `total_load_W` | `DOUBLE` | ✅ | | | `nullValues=0`, ≥0, 800W/4000W/5000W are MODEL_ASSUMPTION | ✅ Input `total_load_w` |
 | `battery_soc_pct` | `DOUBLE` | ✅ | | ✅ | `nullValues=0`, **0.0 ≤ SOC ≤ 100.0** (Li-ion hard constraint) | ✅ `battery_soc * 100` |
 | `battery_voltage_V` | `DOUBLE` | ✅ | | | `nullValues=0`, >0, model equation only (24-32V not hardware bound) | ✅ `_update_battery_voltage()` |
 | `battery_current_A` | `DOUBLE` | ✅ | | | `nullValues=0`, sign consistent with net power, \|I\| = \|P\|/V | ✅ `net_power / voltage` (clamped) |
 | `net_power_W` | `DOUBLE` | ✅ | | | `nullValues=0`, = array - load, battery current sign consistent | ✅ `array_power - total_load` |
-| `available_power_W` | `DOUBLE` | ✅ | | | `nullValues=0`, ≥0 (negative = CRITICAL), ≤ array×0.92 - 800 | ✅ `array_power + max_discharge_power` |
+| `available_power_W` | `DOUBLE` | ✅ | | | `nullValues=0`, ≥0 (negative = CRITICAL), ≤ array×0.92 - 800 | ✅ `compute_available_power()`: max(0, array × 0.92 − 800 W) |
 | `power_state` | `VARCHAR(20)` | ✅ | | ✅ | `nullValues=0`, `invalidValues=0` validValues=[NOMINAL,BATTERY_DISCHARGE,LOW_POWER_MODE,CRITICAL], **strict SOC-gated transitions** | ✅ `_update_power_state()` (fixed) |
 
 ### ODCS-Specific Requirements (Critical)

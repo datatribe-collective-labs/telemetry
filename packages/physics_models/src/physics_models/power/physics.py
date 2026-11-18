@@ -11,6 +11,41 @@ from dataclasses import dataclass, field
 from math import cos, radians
 
 
+def compute_temperature_derating(temperature_k: float) -> float:
+    """Solar array temperature derating factor.
+
+    ~-0.5%/°C above 25°C, floored at 0.5; no gain below 25°C.
+
+    Args:
+        temperature_k: Array temperature (K)
+
+    Returns:
+        Derating factor (0.5-1.0).
+    """
+    temp_c = temperature_k - 273.15
+    return max(0.5, 1.0 - 0.005 * max(0.0, temp_c - 25.0))
+
+
+def compute_available_power(
+    array_power_w: float,
+    distribution_efficiency: float,
+    essential_load_w: float,
+) -> float:
+    """Compute power headroom above essential loads (ODCS 03 available_power_w).
+
+    Contract: available = solar_array_power × 0.92 − 800 W, never negative.
+
+    Args:
+        array_power_w: Solar array gross output (W)
+        distribution_efficiency: Fraction of gross array output delivered to loads (0-1)
+        essential_load_w: Essential-load floor (W)
+
+    Returns:
+        Headroom for non-essential loads (W), >= 0.
+    """
+    return max(0.0, array_power_w * distribution_efficiency - essential_load_w)
+
+
 def compute_solar_array_power(
     solar_flux: float,
     incidence_angle_deg: float,
@@ -42,9 +77,7 @@ def compute_solar_array_power(
         return 0.0
     cos_loss = max(0.0, cos(radians(incidence_angle_deg)))
 
-    # Temperature derating: ~-0.5%/°C above 25°C
-    temp_c = temperature_k - 273.15
-    temp_derate = max(0.5, 1.0 - 0.005 * max(0.0, temp_c - 25.0))
+    temp_derate = compute_temperature_derating(temperature_k)
 
     return solar_flux * array_area_m2 * efficiency * cos_loss * degradation_factor * temp_derate
 
@@ -111,9 +144,15 @@ class PowerModel:
     # Bus
     bus_voltage_v: float = 28.0
 
+    # Available-power headroom (ODCS 03 available_power_w): delivered array power
+    # above the essential-load floor. Both values come from contract 03
+    # (solar_array_power × 0.92 − 800 W) and are MODEL_ASSUMPTIONs there.
+    distribution_efficiency: float = 0.92
+    essential_load_w: float = 800.0
+
     # State
     battery_soc: float = field(default=1.0, init=False)
-    array_efficiency: float = field(default=0.30, init=False)
+    array_efficiency: float = field(default=0.0, init=False)  # set in __post_init__ / step()
     battery_voltage_v: float = field(default=28.0, init=False)
     battery_current_a: float = field(default=0.0, init=False)
     array_power_w: float = field(default=0.0, init=False)
@@ -121,6 +160,9 @@ class PowerModel:
     net_power_w: float = field(default=0.0, init=False)
     available_power_w: float = field(default=0.0, init=False)
     power_state: str = field(default="NOMINAL", init=False)
+
+    def __post_init__(self):
+        self.array_efficiency = self.array_efficiency_bol
 
     def _update_battery_voltage(self, temp_k: float = 293.15):
         """Update battery voltage based on SOC and temperature.
@@ -195,6 +237,14 @@ class PowerModel:
         # Determine if in eclipse for this step
         in_eclipse = eclipse_fraction > 0.5
 
+        # Effective efficiency (ODCS 03): η_BOL × temperature derating × radiation
+        # degradation - the same factors compute_solar_array_power() applies.
+        self.array_efficiency = (
+            self.array_efficiency_bol
+            * compute_temperature_derating(electronics_bay_temp_k)
+            * degradation_factor
+        )
+
         # Compute array power
         self.array_power_w = compute_solar_array_power(
             solar_flux=solar_flux,
@@ -209,6 +259,10 @@ class PowerModel:
         # Apply eclipse fraction (partial eclipse)
         if 0.0 < eclipse_fraction < 1.0:
             self.array_power_w *= (1.0 - eclipse_fraction)
+
+        self.available_power_w = compute_available_power(
+            self.array_power_w, self.distribution_efficiency, self.essential_load_w
+        )
 
         # Power balance
         self.net_power_w = self.array_power_w - total_load_w
@@ -237,10 +291,6 @@ class PowerModel:
 
         # Update battery voltage
         self._update_battery_voltage(electronics_bay_temp_k)
-
-        # Available power = array + max battery discharge capability
-        max_discharge_power = self.max_discharge_current_a * self.battery_voltage_v
-        self.available_power_w = self.array_power_w + max_discharge_power
 
         # Update power state
         self._update_power_state()
