@@ -4,6 +4,7 @@ import asyncio
 import os
 import signal
 import time
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 
 from contracts import (
@@ -21,6 +22,7 @@ from contracts.planned_attitude import (
     get_solar_incidence_angle_estimate,
 )
 
+from physics_models.comms.physics import CommsModel
 from physics_models.config import PhysicsModelsConfig, load_config
 from physics_models.cross_model import CrossModelBus
 from physics_models.kafka import PhysicsModelsKafkaProducer
@@ -61,8 +63,8 @@ class SimulatorRunner:
         # in Docker environments. Use asyncio signal handlers inside run().
         self._signal_handlers_installed = False
 
-        # Owned physics models (state / thermal / power are wired; comms,
-        # radiation, anomaly and ML remain placeholders owned by others).
+        # Owned physics models (state / thermal / power / comms are wired;
+        # radiation, anomaly and ML remain placeholders).
         self.oem_ephemeris: OemEphemeris | None = self._load_oem(config)
         self._reset_models()
         self.base_load_w = 1200.0  # placeholder load profile (Orion EPS budget TBD)
@@ -73,6 +75,7 @@ class SimulatorRunner:
         self.cross_model = CrossModelBus()
         self.thermal_model = ThermalModel3Node.from_config(self.config.thermal.model_dump())
         self.power_model = PowerModel()
+        self.comms_model = CommsModel()
 
     def _loop_end_met_s(self) -> float | None:
         """MET (s) at which `loop` restarts the replay: the end of the OEM arc.
@@ -333,20 +336,17 @@ class SimulatorRunner:
         )
 
     def _tick_comms(self, current_tick: datetime, met: timedelta) -> SyntheticCommsOutput:
-        """Comms model tick - S-band link budget."""
-        # TODO: Implement S-band link budget
-        # Uses cross_model.plasma_noise_factor
-        return SyntheticCommsOutput(
-            timestamp_utc=current_tick,
-            eirp_dbw=20.0,
-            free_space_path_loss_db=200.0,
-            received_power_dbw=-180.0,
-            eb_n0_db=10.0,
-            link_margin_db=5.0,
-            data_rate_kbps=128.0,
-            signal_quality=0.95,
-            comm_state="NOMINAL",
+        """Comms model tick - S-band link budget (CommsModel).
+
+        Power headroom comes from the previous tick via the bus (contract 04). DSN
+        visibility is not applied yet: the state engine always reports it as True.
+        """
+        link = self.comms_model.step(
+            earth_distance_km=self._last_state.earth_distance_km,
+            available_power_w=self.cross_model.available_power_w,
+            plasma_noise_factor=self.cross_model.plasma_noise_factor,
         )
+        return SyntheticCommsOutput(timestamp_utc=current_tick, **asdict(link))
 
     def _tick_radiation(self, current_tick: datetime, met: timedelta) -> SyntheticRadiationOutput:
         """Radiation model tick - AP-8/AE-8 dose."""

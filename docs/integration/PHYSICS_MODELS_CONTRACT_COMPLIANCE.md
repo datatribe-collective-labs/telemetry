@@ -33,7 +33,7 @@ The **ODCS contracts are the single source of truth**. The Pydantic models in `c
 | `state_engine_snapshot` | `SyntheticStateSnapshot` | `trajectory` | StateEngine |
 | `thermal_model_output` | `SyntheticThermalOutput` | `telemetry` | ThermalModel3Node |
 | `power_model_output` | `SyntheticPowerOutput` | `telemetry` | PowerModel |
-| `comms_model_output` | `SyntheticCommsOutput` | `telemetry` | CommsModel (TBD) |
+| `comms_model_output` | `SyntheticCommsOutput` | `telemetry` | `CommsModel` |
 | `radiation_model_output` | `SyntheticRadiationOutput` | `telemetry` | RadiationModel (TBD) |
 | `cross_model_state` | `SyntheticCrossModelState` | `cross_model_state` | CrossModelBus |
 | `telemetry_packet` | `SyntheticTelemetryPacket` | `telemetry` | PacketAssembler |
@@ -50,7 +50,7 @@ The **ODCS contracts are the single source of truth**. The Pydantic models in `c
 | State Engine | `SyntheticStateSnapshot` | ✅ Complete | **100%** |
 | Thermal | `SyntheticThermalOutput` | ✅ Complete | **100%** |
 | Power | `SyntheticPowerOutput` | ✅ Complete | **100%** |
-| Comms | `SyntheticCommsOutput` | ❌ Not Started | **0%** |
+| Comms | `SyntheticCommsOutput` | ✅ Complete (DSN visibility not applied yet) | **~90%** |
 | Radiation | `SyntheticRadiationOutput` | ❌ Not Started | **0%** |
 | Cross-Model Bus | `SyntheticCrossModelState` | ✅ Complete (in `cross_model/bus.py`) | **100%** |
 | Packet Assembler | `SyntheticTelemetryPacket` | ⚠️ Partial (in `runner.py`) | **~80%** |
@@ -225,7 +225,12 @@ The **ODCS contracts are the single source of truth**. The Pydantic models in `c
 
 ---
 
-## 4. Comms Model → `SyntheticCommsOutput` — **NOT IMPLEMENTED**
+## 4. Comms Model → `SyntheticCommsOutput` — implemented (`physics_models/comms/physics.py`, #20)
+
+The link budget, adaptive rate and power gate are implemented. Orion's EIRP is calibrated so the
+1939.4 kbps maximum closes with a 3 dB margin at 410,000 km (NASA: "up to ~2 Mb/s from lunar
+ranges"). Not applied yet: DSN visibility (the state engine always reports True) and plasma noise
+(1.0 until the radiation model provides it).
 
 ### ODCS Contract: `03_power_comms_radiation.odcs.yaml` → `comms_model_output` v1.1.0
 
@@ -369,7 +374,7 @@ The **ODCS contracts are the single source of truth**. The Pydantic models in `c
 ### Status
 - ✅ Thermal fields fully implemented
 - ✅ Power fields fully implemented (except enum)
-- ❌ Comms fields: all placeholders
+- ✅ Comms fields from `CommsModel`
 - ❌ Radiation fields: all placeholders
 - ✅ Derived `all_nominal` logic correct
 

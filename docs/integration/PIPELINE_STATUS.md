@@ -19,7 +19,7 @@ All synthetic telemetry models updated to lowercase field names matching contrac
 
 ### 3. Physics Models Package (`packages/physics_models/`)
 - **Producer** (`kafka/producer.py`): Uses `msg.model_dump_json()` → automatically emits lowercase field names
-- **Runner** (`runner.py`): ✅ Wired to real models (2026-10-19) — state engine interpolates NASA OEM arcs (`data/oem/`), thermal/power run `ThermalModel3Node` / `PowerModel`; comms, radiation, packet, anomaly and ML remain placeholder values
+- **Runner** (`runner.py`): ✅ Wired to real models (2026-10-19) — state engine interpolates NASA OEM arcs (`data/oem/`), thermal/power run `ThermalModel3Node` / `PowerModel`; comms runs `CommsModel` (#20); radiation, packet, anomaly and ML remain placeholder values
 - **OEM loader** (`oem.py`): Parses CCSDS OEM v2.0 arcs (store zip-of-zips), linear interpolation
 - **Cross-Model Bus** (`cross_model/bus.py`): 1-tick lag coupling (live thermal↔power paths)
 - **Consumer** (`packages/physics_models/consumer.py`, package root): New Kafka → TimescaleDB consumer service
@@ -104,7 +104,7 @@ uv run --package dashboard streamlit run dashboard/src/prototype/app.py
 
 | Gap | Owner | Status |
 |-----|-------|--------|
-| Comms model (Rafaela) | Rafaela | Not implemented — placeholder values from runner |
+| Comms model (Rafaela) | Rafaela | ✅ `CommsModel` S-band link budget (#20); DSN visibility not applied yet |
 | Radiation model (Rafaela) | Rafaela | Not implemented — placeholder values from runner |
 | Packet assembler (Rafaela) | Rafaela | Not implemented — runner assembles inline |
 | Anomaly detector + ML features | - | Skeleton only — placeholders |
