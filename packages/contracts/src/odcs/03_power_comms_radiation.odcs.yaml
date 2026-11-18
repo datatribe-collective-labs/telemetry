@@ -250,7 +250,7 @@ apiVersion: v3.1.0
 kind: DataContract
 id: 4c6d8e0f-2a3b-4c5d-0e1f-6a7b8c9d0e1f
 name: comms_model_output
-version: 1.0.0
+version: 1.1.0
 status: active
 domain: spacecraft_digital_twin
 
@@ -268,6 +268,15 @@ description:
     - url: https://deepspace.jpl.nasa.gov/dsndocs/810-005/206/206B.pdf
       type: businessDefinition
       description: JPL DSN Telecommunications Link Design Handbook 810-005
+    - url: https://deepspace.jpl.nasa.gov/dsndocs/810-005/104/104O.pdf
+      type: businessDefinition
+      description: "[DSN 104] 810-005 module 104, 34-m BWG antennas: S-band receive band 2200–2300 MHz, receive gain and system noise temperature (Table 6 in Rev. E)."
+    - url: https://ntrs.nasa.gov/api/citations/20250009239/downloads/Orion%20Artemis%20II%20Optical%20Communications.pdf
+      type: businessDefinition
+      description: "[NASA O2O 2025] Orion comm capability: S-band phased array transmitters, up to ~2 Mb/s from lunar ranges to the DSN."
+    - url: https://destevez.net/2022/11/decoding-the-artemis-i-orion-vehicle/
+      type: businessDefinition
+      description: "[Artemis I decode] Orion S-band downlink observed at 2216.5 MHz: 2 Mbaud OQPSK, CCSDS LDPC r=1/2 k=1024, 128-byte AOS frames every 528 µs (1024 information bits per frame)."
 
 team:
   - username: ${DATA_PRODUCT_OWNER}
@@ -328,16 +337,17 @@ schema:
         required: true
         description: >
           FSPL = 20·log10(4π·d·f/c), using earth_distance_km and downlink_frequency_Hz.
-          DSN Module 206 identifies S-band downlink capability around 2.27–2.30 GHz;
-          2.1 GHz is not the S-band value given by that source [Source #4].
+          Orion's S-band downlink carrier is 2216.5 MHz [Artemis I decode], inside the
+          DSN 34-m S-band receive band of 2200–2300 MHz [DSN 104]. 2.1 GHz is the
+          uplink band, not the downlink.
         quality:
           - metric: nullValues
             mustBe: 0
           - type: text
             description: >
               Must equal the Friis free-space calculation from the current range and
-              configured carrier. For 2.27–2.30 GHz and 6,500–410,000 km the calculated
-              envelope is approximately 175.83–211.94 dB [Source #4].
+              configured carrier. For 2216.5 MHz and 6,500–410,000 km the calculated
+              envelope is approximately 175.62–211.62 dB.
       - id: received_power_dbw
         name: received_power_dbw
         businessName: Received power at DSN (dBW)
@@ -400,19 +410,22 @@ schema:
         required: true
         description: >
           Achieved downlink rate selected adaptively based on available link margin.
-          Steps: 1250 kbps (HGA max), 512, 256, 128, 64, 16 kbps (omni fallback), 0 (no link).
+          Steps: 1939.4 kbps (maximum: 1024 information bits per 528 µs frame
+          [Artemis I decode]; "up to ~2 Mb/s from lunar ranges" [NASA O2O 2025]),
+          1250, 512, 256, 128, 64, 16 kbps, 0 (no link).
         quality:
           - metric: nullValues
             mustBe: 0
           - metric: invalidValues
             mustBe: 0
             arguments:
-              validValues: [0.0, 16.0, 64.0, 128.0, 256.0, 512.0, 1250.0]
+              validValues: [0.0, 16.0, 64.0, 128.0, 256.0, 512.0, 1250.0, 1939.4]
           - type: text
             description: >
               Must be 0 when comm_state = NO_LINK. Nonzero rates must be selected from
-              the configured mission/hardware rate set. The present set remains UNVERIFIED
-              pending Orion communications configuration documentation.
+              the configured mission/hardware rate set. The maximum rate is sourced;
+              the lower steps remain UNVERIFIED pending Orion communications
+              configuration documentation.
 
       - id: signal_quality
         name: signal_quality

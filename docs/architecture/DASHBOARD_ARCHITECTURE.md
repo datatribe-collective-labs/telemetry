@@ -190,7 +190,7 @@
 | Widget | Contract Fields | Thresholds (ODCS) | Why |
 |--------|-----------------|-------------------|-----|
 | **Link Margin** | link_margin_dB | <0 = NO_LINK | Primary comm health |
-| **Data Rate** | data_rate_kbps | 0,16,64,128,256,512,1250 | Adaptive rate selection |
+| **Data Rate** | data_rate_kbps | 0,16,64,128,256,512,1250,1939.4 | Adaptive rate selection |
 | **Signal Quality** | signal_quality (0-1) | 0 at NO_LINK, >0 at NOMINAL | Normalized health |
 | **EIRP/FSPL/Pr** | eirp_dBW, FSPL_dB, Pr_dBW | Physics-derived (Friis) | Link budget debug |
 | **DSN Geometry** | dsn_site_geometry (real) | elevation ≥ 10° = visible | Real ground truth |

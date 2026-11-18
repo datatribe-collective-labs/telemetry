@@ -227,25 +227,25 @@ The **ODCS contracts are the single source of truth**. The Pydantic models in `c
 
 ## 4. Comms Model → `SyntheticCommsOutput` — **NOT IMPLEMENTED**
 
-### ODCS Contract: `03_power_comms_radiation.odcs.yaml` → `comms_model_output` v1.0.0
+### ODCS Contract: `03_power_comms_radiation.odcs.yaml` → `comms_model_output` v1.1.0
 
 ### Contract Fields with ODCS Quality Rules
 | Field | ODCS Type | Required | PK | Critical | Quality Rules (ODCS) | Notes |
 |-------|-----------|----------|-----|----------|----------------------|-------|
 | `timestamp_utc` | `TIMESTAMP WITH TIME ZONE` | ✅ | ✅ | | `nullValues=0` | |
 | `eirp_dBW` | `DOUBLE` | ✅ | | | `nullValues=0`, derived from configured RF power + antenna gain | EIRP = 10·log₁₀(P_tx) + G_tx |
-| `free_space_path_loss_dB` | `DOUBLE` | ✅ | | | `nullValues=0`, **must equal Friis calculation** from range + carrier (2.27-2.30 GHz) | FSPL = 20·log₁₀(4πdf/c) |
+| `free_space_path_loss_dB` | `DOUBLE` | ✅ | | | `nullValues=0`, **must equal Friis calculation** from range + carrier (2216.5 MHz) | FSPL = 20·log₁₀(4πdf/c) |
 | `received_power_dBW` | `DOUBLE` | ✅ | | | `nullValues=0`, must satisfy link-budget equation | Pr = EIRP - FSPL + G_rx - L_misc |
 | `eb_n0_dB` | `DOUBLE` | ✅ | | | `nullValues=0`, no universal 4.5 dB threshold | Eb/N0 = Pr - N₀ - 10·log₁₀(R) - L_impl |
 | `link_margin_dB` | `DOUBLE` | ✅ | | ✅ | `nullValues=0`, **must equal eb_n0 - required_eb_n0** | NO_LINK if margin < 0 |
-| `data_rate_kbps` | `DOUBLE` | ✅ | | | `nullValues=0`, `invalidValues=0` validValues=[0,16,64,128,256,512,1250] | Must be 0 when NO_LINK |
+| `data_rate_kbps` | `DOUBLE` | ✅ | | | `nullValues=0`, `invalidValues=0` validValues=[0,16,64,128,256,512,1250,1939.4] | Must be 0 when NO_LINK |
 | `signal_quality` | `DOUBLE` | ✅ | | | `nullValues=0`, **0.0 ≤ SQ ≤ 1.0**, =0 at NO_LINK | Normalized: 0 at threshold, 1 at +20 dB |
 | `comm_state` | `VARCHAR(10)` | ✅ | | ✅ | `nullValues=0`, `invalidValues=0` validValues=[NOMINAL,DEGRADED,NO_LINK] | |
 
 ### ODCS-Specific Requirements (Critical)
 - **All bounds derived from physics of EM propagation** — not adjustable
 - **No fixed EIRP validity range** until Orion transmitter/antenna specs supplied
-- **FSPL envelope**: 175.83–211.94 dB for 2.27-2.30 GHz at 6,500-410,000 km
+- **FSPL envelope**: 175.62–211.62 dB for 2216.5 MHz at 6,500-410,000 km
 - **DSN gains**: Configuration-dependent per Module 206, no universal 63.2 dBi
 - **Required Eb/N0**: Configuration parameter, not universal constant
 - **Link margin**: Must equal eb_n0_dB - required_eb_n0_dB; no hard-coded 3 dB
@@ -253,11 +253,11 @@ The **ODCS contracts are the single source of truth**. The Pydantic models in `c
 - **Signal quality**: Normalized link margin, physical constraint 0-1
 
 ### Required Physics
-- **S-band link budget**: ~2.2 GHz (2110-2120 MHz downlink) — ODCS cites DSN Module 206
+- **S-band link budget**: 2216.5 MHz downlink (Artemis I decode), inside the DSN 34-m receive band 2200-2300 MHz
 - **Orion antenna**: HGA ~24 dBi, LGA ~0-6 dBi (UNVERIFIED per ODCS)
 - **DSN antennas**: 34m BWG (56 dBi), 70m (68 dBi) — config-dependent
 - **Friis equation**: Pr = Pt + Gt + Gr - FSPL - L_atm - L_pol
-- **Data rate**: Adaptive from configured rate set (0, 16, 64, 128, 256, 512, 1250 kbps)
+- **Data rate**: Adaptive from configured rate set (0, 16, 64, 128, 256, 512, 1250, 1939.4 kbps; max ~2 Mb/s sourced, lower steps UNVERIFIED)
 - **Plasma noise**: From radiation model cross-coupling (`plasma_noise_factor`)
 
 ### Cross-Model Inputs Needed

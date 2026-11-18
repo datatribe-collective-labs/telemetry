@@ -131,7 +131,7 @@ This page must make the **Artemis II free-return lunar flyby** visually legible.
 - Link budget per tick: `eirp_dbw + fspl + received_power → eb_n0_db → link_margin_db`
   waterfall (Plotly `Waterfall` chart) — makes the Friis chain inspectable.
 - Link margin vs time with 0 dB "NO_LINK" line and adaptive `data_rate_kbps` step trace
-  (validValues set from contract: 0/16/64/128/256/512/1250).
+  (validValues set from contract: 0/16/64/128/256/512/1250/1939.4).
 - **Real DSN layer:** `/dsn-geometry` az/el polar chart per complex + visibility windows
   on a 24 h Gantt strip; compare real geometry visibility vs synthetic
   `dsn_visibility` bit (contract-consistency indicator).
