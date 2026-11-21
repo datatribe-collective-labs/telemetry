@@ -15,6 +15,8 @@ from contracts.planned_attitude import (
     resolve_attitude,
 )
 
+from physics_models.state_engine.dsn import is_dsn_visible
+
 # Constants
 EARTH_MU = 398600.4418  # km^3/s^2
 SUN_MU = 1.32712440018e11  # km^3/s^2
@@ -145,44 +147,6 @@ def compute_eclipse_state(
         return "PENUMBRA", fraction
 
 
-def compute_dsn_visibility(
-    sc_pos: np.ndarray,
-    dsn_sites: dict[str, np.ndarray],
-    elevation_mask_deg: float = 10.0,
-) -> dict[str, bool]:
-    """Compute DSN site visibility given spacecraft position.
-
-    Elevation angle is arcsin(site_up · los), where site_up is the
-    unit vector from Earth center to the DSN site, and los is the
-    unit vector from the site to the spacecraft.
-    """
-    visibility = {}
-
-    for site_name, site_pos in dsn_sites.items():
-        # Vector from DSN site to spacecraft (line of sight)
-        r_site_sc = sc_pos - site_pos
-        site_range = np.linalg.norm(r_site_sc)
-
-        if site_range < 1e-6:
-            visibility[site_name] = False
-            continue
-
-        # Site upward normal (from Earth center to site)
-        site_up = site_pos / np.linalg.norm(site_pos)
-        # Line of sight unit vector
-        los = r_site_sc / site_range
-
-        # Elevation: angle between site_up and los
-        # elev = arcsin(site_up · los)
-        sin_elev = np.dot(site_up, los)
-        sin_elev = max(-1.0, min(1.0, sin_elev))
-        elev = np.arcsin(sin_elev)
-
-        visibility[site_name] = elev >= radians(elevation_mask_deg)
-
-    return visibility
-
-
 def compute_light_time(sc_pos: np.ndarray, earth_pos: np.ndarray) -> float:
     """Compute one-way light time (seconds)."""
     return np.linalg.norm(sc_pos - earth_pos) / 299792.458  # km / (km/s)
@@ -294,12 +258,6 @@ class StateEnginePhysics:
 
     def __init__(self, liftoff_utc: datetime):
         self.liftoff_utc = liftoff_utc
-        # DSN sites in ECI (simplified - real positions need Earth rotation)
-        self.dsn_sites = {
-            "GOLDSTONE": np.array([-2350.0, -4650.0, 3670.0]),
-            "MADRID": np.array([4850.0, -350.0, 3950.0]),
-            "CANBERRA": np.array([-4450.0, 2800.0, -3650.0]),
-        }
 
     def compute_state_at_met(self, met: timedelta) -> dict:
         """Compute full spacecraft state at Mission Elapsed Time."""
@@ -338,10 +296,6 @@ class StateEnginePhysics:
         # Eclipse state
         eclipse_state, eclipse_fraction = compute_eclipse_state(sc_pos, earth_pos, sun_pos)
 
-        # DSN visibility
-        dsn_vis = compute_dsn_visibility(sc_pos, self.dsn_sites)
-        any_dsn_visible = any(dsn_vis.values())
-
         # Light time
         light_time = compute_light_time(sc_pos, earth_pos)
 
@@ -366,7 +320,7 @@ class StateEnginePhysics:
             "eclipse_state": eclipse_state,
             "eclipse_fraction": eclipse_fraction,
             "earth_distance_km": float(np.linalg.norm(sc_pos)),
-            "dsn_visibility": any_dsn_visible,
+            "dsn_visibility": is_dsn_visible(sc_pos, current_time),
             "light_time_s": light_time,
             "solar_array_angle_deg": solar_array_angle,
             "roll_deg": roll,

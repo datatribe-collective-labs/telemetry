@@ -63,7 +63,7 @@ Physics Models (1 Hz) → Kafka (Redpanda) → Consumer → TimescaleDB → Back
 
 | Gap | Owner | Status |
 |-----|-------|--------|
-| Comms Generator | Rafaela | ✅ S-band link budget (`physics_models/comms/`, #20); DSN visibility not applied yet |
+| Comms Generator | Rafaela | ✅ S-band link budget (`physics_models/comms/`, #20) with DSN visibility; Moon blocking not modelled yet |
 | Radiation Generator | Rafaela | Not implemented — placeholder values emitted by runner |
 | Packet Assembler | Rafaela | Not implemented — runner assembles inline |
 | Anomaly Detector + ML Features | — | Skeleton only — placeholder values; `events` topic absent |
