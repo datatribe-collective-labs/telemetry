@@ -33,6 +33,7 @@ from physics_models.oem import (
     load_oem_asc,
 )
 from physics_models.power.physics import PowerModel
+from physics_models.state_engine.dsn import is_dsn_visible
 from physics_models.state_engine.physics import (
     compute_eclipse_state,
     compute_solar_flux,
@@ -264,7 +265,7 @@ class SimulatorRunner:
             eclipse_state=eclipse_state,
             eclipse_fraction=eclipse_fraction,
             earth_distance_km=earth_distance,
-            dsn_visibility=True,  # real per-site geometry comes from the pipelines
+            dsn_visibility=is_dsn_visible(sc_pos, current_tick),
             light_time_s=earth_distance / 299792.458,
             solar_array_angle_deg=solar_array_gimbal,
             roll_deg=0.0,  # AROW attitude unavailable (contract: null/placeholder OK)
@@ -338,13 +339,14 @@ class SimulatorRunner:
     def _tick_comms(self, current_tick: datetime, met: timedelta) -> SyntheticCommsOutput:
         """Comms model tick - S-band link budget (CommsModel).
 
-        Power headroom comes from the previous tick via the bus (contract 04). DSN
-        visibility is not applied yet: the state engine always reports it as True.
+        Power headroom comes from the previous tick via the bus (contract 04). The
+        link is blocked while the state engine reports no DSN complex in view.
         """
         link = self.comms_model.step(
             earth_distance_km=self._last_state.earth_distance_km,
             available_power_w=self.cross_model.available_power_w,
             plasma_noise_factor=self.cross_model.plasma_noise_factor,
+            dsn_visible=self._last_state.dsn_visibility,
         )
         return SyntheticCommsOutput(timestamp_utc=current_tick, **asdict(link))
 
@@ -428,7 +430,7 @@ class SimulatorRunner:
             eclipse_fraction=0.0,
             in_belt=0.0,
             sep_active=0.0,
-            dsn_visible=1.0,
+            dsn_visible=1.0 if self._last_state.dsn_visibility else 0.0,
             temp_sun_residual_k=0.0,
             link_margin_residual_db=0.0,
             array_efficiency_ratio=1.0,

@@ -127,6 +127,28 @@ def test_step_no_headroom_is_no_link_even_near_earth(model):
     assert link.link_margin_db < 0.0
 
 
+def test_step_no_dsn_in_view_is_no_link_even_near_earth(model):
+    link = model.step(earth_distance_km=MIN_RANGE_KM, available_power_w=1_000.0, dsn_visible=False)
+    assert link.comm_state == "NO_LINK"
+    assert link.data_rate_kbps == 0.0
+    assert link.signal_quality == 0.0
+    assert link.link_margin_db < 0.0
+
+
+def test_step_no_dsn_in_view_keeps_true_path_loss_and_eirp(model):
+    visible = model.step(earth_distance_km=250_000.0, available_power_w=1_000.0)
+    blocked = model.step(earth_distance_km=250_000.0, available_power_w=1_000.0, dsn_visible=False)
+    assert blocked.free_space_path_loss_db == visible.free_space_path_loss_db
+    assert blocked.eirp_dbw == visible.eirp_dbw
+    assert blocked.received_power_dbw == pytest.approx(
+        blocked.eirp_dbw
+        - blocked.free_space_path_loss_db
+        + model.dsn_antenna_gain_dbi
+        - model.misc_loss_db
+        - model.blocked_signal_loss_db
+    )
+
+
 def test_step_degraded_when_lowest_rate_closes_below_operational_margin():
     model = CommsModel(required_eb_n0_db=2.0, operational_margin_db=3.0)
     # Find the range where 16 kbps has ~1.5 dB margin: start from the 16 kbps margin at
@@ -149,8 +171,13 @@ def test_step_plasma_noise_factor_scales_signal_quality(model):
 
 @pytest.mark.parametrize("distance_km", [MIN_RANGE_KM, 50_000.0, 200_000.0, MAX_RANGE_KM, 2_000_000.0])
 @pytest.mark.parametrize("available_w", [None, 0.0, 1.0, 40.0, 150.0, 10_000.0])
-def test_step_output_satisfies_contract_rules(model, distance_km, available_w):
-    link = model.step(earth_distance_km=distance_km, available_power_w=available_w)
+@pytest.mark.parametrize("dsn_visible", [True, False])
+def test_step_output_satisfies_contract_rules(model, distance_km, available_w, dsn_visible):
+    link = model.step(
+        earth_distance_km=distance_km, available_power_w=available_w, dsn_visible=dsn_visible
+    )
+    if not dsn_visible:
+        assert link.comm_state == "NO_LINK"
     assert link.data_rate_kbps in CONTRACT_RATES_KBPS
     assert 0.0 <= link.signal_quality <= 1.0
     assert link.link_margin_db == pytest.approx(link.eb_n0_db - model.required_eb_n0_db)

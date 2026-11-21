@@ -107,12 +107,16 @@ class CommsModel:
     # Transmitter off (no headroom) is modelled as a negligible RF power so every field
     # stays finite (contract: no nulls) and the margin is far below 0 at any range.
     rf_power_off_w: float = 1e-12
+    # No DSN complex in view: an explicit extra loss, for the same reason. FSPL stays the
+    # true range value, as the contract requires.
+    blocked_signal_loss_db: float = 200.0
 
     def step(
         self,
         earth_distance_km: float,
         available_power_w: float | None,
         plasma_noise_factor: float = 1.0,
+        dsn_visible: bool = True,
     ) -> CommsLink:
         """Link budget for one tick.
 
@@ -121,6 +125,7 @@ class CommsModel:
             available_power_w: Power headroom from the previous power tick (W);
                 None before the first power tick (transmitter at full power)
             plasma_noise_factor: Quality multiplier from the radiation model (1.0 = none)
+            dsn_visible: False when no DSN complex is in view (always NO_LINK)
 
         The highest rate whose margin reaches operational_margin_db is NOMINAL. If none
         does, the lowest rate is DEGRADED while its margin is still above 0; otherwise
@@ -136,7 +141,8 @@ class CommsModel:
 
         eirp = 10 * log10(rf_power_w) + self.tx_antenna_gain_dbi
         fspl = compute_free_space_path_loss(earth_distance_km, self.downlink_frequency_hz)
-        received = eirp - fspl + self.dsn_antenna_gain_dbi - self.misc_loss_db
+        misc_loss = self.misc_loss_db + (0.0 if dsn_visible else self.blocked_signal_loss_db)
+        received = eirp - fspl + self.dsn_antenna_gain_dbi - misc_loss
         n0 = compute_noise_density(self.system_noise_temp_k)
 
         def margin_at(rate_kbps: float) -> tuple[float, float]:

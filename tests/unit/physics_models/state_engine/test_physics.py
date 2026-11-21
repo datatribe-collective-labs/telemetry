@@ -10,7 +10,6 @@ from physics_models.state_engine.physics import (
     OrbitalState,
     StateEnginePhysics,
     compute_attitude_quaternion,
-    compute_dsn_visibility,
     compute_eclipse_state,
     compute_light_time,
     compute_solar_array_power,
@@ -154,26 +153,6 @@ class TestEclipseState:
         state, fraction = compute_eclipse_state(sc_pos, earth_pos, sun_pos)
         assert state == "PENUMBRA"
         assert 0.0 < fraction < 1.0
-
-
-class TestDSNVisibility:
-    """Test DSN visibility computation."""
-
-    def test_visible_site(self):
-        """Site with spacecraft above horizon."""
-        sc_pos = np.array([0.0, 0.0, 40000.0])  # High over north pole
-        dsn_sites = {"TEST": np.array([0.0, 0.0, 6378.0])}  # Near north pole
-
-        vis = compute_dsn_visibility(sc_pos, dsn_sites)
-        assert vis["TEST"] is True or vis["TEST"] == np.True_
-
-    def test_not_visible_site(self):
-        """Site with spacecraft below horizon."""
-        sc_pos = np.array([0.0, 0.0, -40000.0])  # Over south pole
-        dsn_sites = {"TEST": np.array([0.0, 0.0, 6378.0])}  # North pole site
-
-        vis = compute_dsn_visibility(sc_pos, dsn_sites)
-        assert vis["TEST"] is False or vis["TEST"] == np.False_
 
 
 class TestLightTime:
