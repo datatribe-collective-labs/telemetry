@@ -50,7 +50,7 @@ The **ODCS contracts are the single source of truth**. The Pydantic models in `c
 | State Engine | `SyntheticStateSnapshot` | ✅ Complete | **100%** |
 | Thermal | `SyntheticThermalOutput` | ✅ Complete | **100%** |
 | Power | `SyntheticPowerOutput` | ✅ Complete | **100%** |
-| Comms | `SyntheticCommsOutput` | ✅ Complete (Moon blocking not modelled yet) | **~95%** |
+| Comms | `SyntheticCommsOutput` | ✅ Complete (plasma noise waits on radiation) | **~95%** |
 | Radiation | `SyntheticRadiationOutput` | ❌ Not Started | **0%** |
 | Cross-Model Bus | `SyntheticCrossModelState` | ✅ Complete (in `cross_model/bus.py`) | **100%** |
 | Packet Assembler | `SyntheticTelemetryPacket` | ⚠️ Partial (in `runner.py`) | **~80%** |
@@ -79,7 +79,7 @@ The **ODCS contracts are the single source of truth**. The Pydantic models in `c
 | `eclipse_state` | `VARCHAR(10)` | ✅ | | `nullValues=0`, `invalidValues=0` validValues=[SUNLIT,UMBRA,PENUMBRA] | ✅ `compute_eclipse_state()` |
 | `eclipse_fraction` | `DOUBLE` | ✅ | | `nullValues=0`, 0≤f≤1, consistent with eclipse_state | ✅ Same function |
 | `earth_distance_km` | `DOUBLE` | ✅ | | `nullValues=0`, \|d - √(x²+y²+z²)\| < 1 km | ✅ `np.linalg.norm(sc_pos)` |
-| `dsn_visibility` | `BOOLEAN` | ✅ | | `nullValues=0` | ✅ `state_engine/dsn.py` `is_dsn_visible()` (Earth-rotating sites; matches all 642 Horizons site rows) |
+| `dsn_visibility` | `BOOLEAN` | ✅ | | `nullValues=0` | ✅ `state_engine/dsn.py` `is_dsn_visible()` (Earth-rotating sites, matching all 642 Horizons site rows; Moon blocking from `state_engine/moon_ephemeris.csv`) |
 | `light_time_s` | `DOUBLE` | ✅ | | `nullValues=0`, \|lt - d_km×1000/299792458\| < 0.01s | ✅ `compute_light_time()` |
 | `solar_array_angle_deg` | `DOUBLE` | ✅ | | `nullValues=0`, 0 ≤ angle ≤ 180 | ✅ From `planned_attitude.py` |
 | `roll_deg`, `pitch_deg`, `yaw_deg` | `DOUBLE` | ❌ | | Valid range: −180 to 180 | ⚠️ Placeholder (identity quaternion) |
@@ -229,9 +229,9 @@ The **ODCS contracts are the single source of truth**. The Pydantic models in `c
 
 The link budget, adaptive rate and power gate are implemented. Orion's EIRP is calibrated so the
 1939.4 kbps maximum closes with a 3 dB margin at 410,000 km (NASA: "up to ~2 Mb/s from lunar
-ranges"). The link is `NO_LINK` while no DSN complex sees Orion above 10°. Not applied yet: Moon
-blocking and plasma noise (1.0 until the radiation model provides it). The contract models DSN
-only, so gaps early in the mission are expected even though the real Orion also used the Near
+ranges"). The link is `NO_LINK` while no DSN complex has a clear view of Orion above 10°, including
+the 40-minute lunar far-side blackout (NASA: about 41 minutes). Not applied yet: plasma noise (1.0
+until the radiation model provides it). The contract models DSN only, so gaps early in the mission are expected even though the real Orion also used the Near
 Space Network near Earth.
 
 ### ODCS Contract: `03_power_comms_radiation.odcs.yaml` → `comms_model_output` v1.1.0

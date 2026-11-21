@@ -104,7 +104,7 @@ uv run --package dashboard streamlit run dashboard/src/prototype/app.py
 
 | Gap | Owner | Status |
 |-----|-------|--------|
-| Comms model (Rafaela) | Rafaela | ✅ `CommsModel` S-band link budget (#20) with DSN visibility; Moon blocking not modelled yet |
+| Comms model (Rafaela) | Rafaela | ✅ `CommsModel` S-band link budget (#20) with DSN visibility and Moon blocking |
 | Radiation model (Rafaela) | Rafaela | Not implemented — placeholder values from runner |
 | Packet assembler (Rafaela) | Rafaela | Not implemented — runner assembles inline |
 | Anomaly detector + ML features | - | Skeleton only — placeholders |
