@@ -70,7 +70,8 @@ simulation and is the ground truth to check it against.
 | JPL Horizons Orion trajectory | Real | Ground truth for the simulated trajectory |
 | Moon, DSN antennas, space weather (GOES, DONKI) | Real | Context; planned inputs for comms and radiation |
 | State, thermal, power | Synthetic | Physics model output |
-| Comms, radiation, anomaly/ML | Synthetic | **Placeholder** values, not simulated yet |
+| Comms | Synthetic | Physics model output (S-band link budget) |
+| Radiation, anomaly/ML | Synthetic | **Placeholder** values, not simulated yet |
 
 ### The dashboard
 
