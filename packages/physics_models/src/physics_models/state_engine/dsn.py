@@ -5,7 +5,8 @@ EME2000 to the Earth-fixed frame with IAU 1976 precession and GMST (IAU 1982), a
 elevation is measured from the station's local horizon. Nutation, polar motion and
 UT1-UTC are ignored (about 0.01 degrees at most).
 
-Only Earth blocking is modelled here; the Moon is not.
+A station also loses Orion while the Moon crosses the straight line between them. Light
+travel time is ignored: the Moon moves about 1 km while a signal reaches Earth.
 """
 
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ from datetime import UTC, datetime
 from math import asin, cos, degrees, radians, sin, sqrt, tau
 
 import numpy as np
+
+from physics_models.state_engine.moon import MOON_RADIUS_KM, compute_moon_position_km
 
 WGS84_A_KM = 6378.137
 WGS84_F = 1 / 298.257223563
@@ -110,10 +113,41 @@ def compute_site_elevation_deg(site: DsnSite, sc_pos_km: np.ndarray, t: datetime
     return degrees(asin(max(-1.0, min(1.0, sin_elevation))))
 
 
+def is_line_of_sight_blocked(
+    start_km: np.ndarray,
+    end_km: np.ndarray,
+    body_center_km: np.ndarray,
+    body_radius_km: float,
+) -> bool:
+    """True if the straight segment from start to end passes through the sphere."""
+    segment = end_km - start_km
+    fraction = np.dot(body_center_km - start_km, segment) / np.dot(segment, segment)
+    closest_point = start_km + min(1.0, max(0.0, fraction)) * segment
+    return bool(np.linalg.norm(body_center_km - closest_point) < body_radius_km)
+
+
+def is_site_visible(
+    site: DsnSite,
+    sc_pos_km: np.ndarray,
+    t: datetime,
+    cutoff_deg: float = ELEVATION_CUTOFF_DEG,
+) -> bool:
+    """True if the spacecraft is above the site's cutoff and the Moon is not in the way."""
+    if compute_site_elevation_deg(site, sc_pos_km, t) < cutoff_deg:
+        return False
+    site_pos, _ = compute_site_position(site)
+    return not is_line_of_sight_blocked(
+        site_pos,
+        eme2000_to_earth_fixed(sc_pos_km, t),
+        eme2000_to_earth_fixed(compute_moon_position_km(t), t),
+        MOON_RADIUS_KM,
+    )
+
+
 def is_dsn_visible(
     sc_pos_km: np.ndarray,
     t: datetime,
     cutoff_deg: float = ELEVATION_CUTOFF_DEG,
 ) -> bool:
-    """True if at least one DSN complex sees the spacecraft at or above the cutoff."""
-    return any(compute_site_elevation_deg(site, sc_pos_km, t) >= cutoff_deg for site in DSN_SITES)
+    """True if at least one DSN complex has a clear view of the spacecraft."""
+    return any(is_site_visible(site, sc_pos_km, t, cutoff_deg) for site in DSN_SITES)
