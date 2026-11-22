@@ -389,7 +389,8 @@ async def list_synthetic_radiation(
 ) -> SyntheticRadiationResponse:
     """List radiation model outputs.
     
-    AP-8/AE-8 based dose accumulation and hardware degradation factors.
+    Simulated absorbed dose in water at one cabin sensor, calibrated to Artemis I.
+    Hardware degradation factors are not modeled and stay 1.0.
     """
     conditions = []
     params: dict = {}

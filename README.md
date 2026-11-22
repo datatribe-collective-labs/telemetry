@@ -71,7 +71,8 @@ simulation and is the ground truth to check it against.
 | Moon, DSN antennas, space weather (GOES, DONKI) | Real | Context; planned inputs for comms and radiation |
 | State, thermal, power | Synthetic | Physics model output |
 | Comms | Synthetic | Physics model output (S-band link budget) |
-| Radiation, anomaly/ML | Synthetic | **Placeholder** values, not simulated yet |
+| Radiation | Synthetic | Simulated dose at one cabin sensor, calibrated to Artemis I |
+| Anomaly/ML | Synthetic | **Placeholder** values, not simulated yet |
 
 ### The dashboard
 

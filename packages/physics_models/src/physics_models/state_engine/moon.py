@@ -32,5 +32,10 @@ def compute_moon_position_km(t: datetime) -> np.ndarray:
     OEM reader does.
     """
     aware = t if t.tzinfo else t.replace(tzinfo=UTC)
+    return compute_moon_positions_km(np.array([aware.timestamp()]))[0]
+
+
+def compute_moon_positions_km(unix_seconds: np.ndarray) -> np.ndarray:
+    """Moon positions (Nx3 km) at many Unix times, with the same interpolation."""
     epochs, positions = _load_ephemeris()
-    return np.array([np.interp(aware.timestamp(), epochs, positions[:, axis]) for axis in range(3)])
+    return np.column_stack([np.interp(unix_seconds, epochs, positions[:, axis]) for axis in range(3)])

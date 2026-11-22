@@ -47,10 +47,11 @@ def make_outputs():
             "link_loss_reason": "NONE", **(comms or {}),
         })
         radiation_msg = SyntheticRadiationOutput(**{
-            "timestamp_utc": T0, "total_dose_rate_rad_s": 0.001, "cumulative_dose_krad": 0.0,
+            "timestamp_utc": T0, "total_dose_rate_rad_s": 5e-6, "cumulative_dose_krad": 1e-3,
             "solar_array_degradation": 1.0, "thermal_alpha_degradation": 1.0,
-            "thermal_eps_degradation": 1.0, "radiation_dose_rate_mrad_hr": 0.1,
-            "sep_event_active": False, **(radiation or {}),
+            "thermal_eps_degradation": 1.0, "radiation_dose_rate_mrad_hr": 18.0,
+            "sep_event_active": False, "belt_dose_rate_rad_s": 1e-6, "gcr_dose_rate_rad_s": 4e-6,
+            "cumulative_belt_dose_krad": 7e-4, "radiation_zone": "DEEP_SPACE", **(radiation or {}),
         })
         packet = assemble_packet(state_msg, thermal_msg, power_msg, comms_msg, radiation_msg)
         ml_features = SyntheticMLFeatureVector(

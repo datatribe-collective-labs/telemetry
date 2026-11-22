@@ -6,6 +6,7 @@ import signal
 import time
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
+from functools import cached_property
 
 from contracts import (
     SyntheticAnomalyEvent,
@@ -34,6 +35,13 @@ from physics_models.oem import (
 )
 from physics_models.packet import TickOutputs, assemble_packet, validate_tick
 from physics_models.power.physics import PowerModel
+from physics_models.radiation import (
+    EARTH_RADIUS_KM,
+    DoseProfile,
+    compute_instant_dose,
+    compute_radiation_zone,
+    is_sep_event_active,
+)
 from physics_models.state_engine.dsn import compute_dsn_view, is_dsn_visible
 from physics_models.state_engine.physics import (
     compute_eclipse_state,
@@ -65,8 +73,8 @@ class SimulatorRunner:
         # in Docker environments. Use asyncio signal handlers inside run().
         self._signal_handlers_installed = False
 
-        # Owned physics models (state / thermal / power / comms are wired;
-        # radiation, anomaly and ML remain placeholders).
+        # Owned physics models (state / thermal / power / comms / radiation are wired;
+        # anomaly and ML remain placeholders).
         self.oem_ephemeris: OemEphemeris | None = self._load_oem(config)
         self._reset_models()
         self.base_load_w = 1200.0  # placeholder load profile (Orion EPS budget TBD)
@@ -118,6 +126,11 @@ class SimulatorRunner:
             sim_seconds = met_at(0)
             print(f"Replay looped at tick {self._tick_count}: back to MET {sim_seconds:.0f} s")
         return sim_seconds
+
+    @cached_property
+    def dose_profile(self) -> DoseProfile | None:
+        """Dose along the OEM arc, computed once; None in placeholder-orbit mode."""
+        return DoseProfile.from_ephemeris(self.oem_ephemeris) if self.oem_ephemeris is not None else None
 
     def _load_oem(self, config: PhysicsModelsConfig) -> OemEphemeris | None:
         """Load NASA OEM ephemeris per config; None means placeholder orbit mode."""
@@ -371,18 +384,30 @@ class SimulatorRunner:
         return SyntheticCommsOutput(timestamp_utc=current_tick, **asdict(link))
 
     def _tick_radiation(self, current_tick: datetime, met: timedelta) -> SyntheticRadiationOutput:
-        """Radiation model tick - AP-8/AE-8 dose."""
-        # TODO: Implement radiation model
-        # Outputs feed cross_model: solar_array_degradation, thermal_coating_*_factor, plasma_noise_factor
+        """Radiation model tick - simulated dose at one cabin sensor (contract 03).
+
+        Degradation factors are not modeled and stay 1.0.
+        """
+        import numpy as np
+
+        state = self._last_state
+        if self.dose_profile is not None:
+            dose = self.dose_profile.at(current_tick)
+        else:
+            dose = compute_instant_dose(np.array([state.x_km, state.y_km, state.z_km]), current_tick)
         return SyntheticRadiationOutput(
             timestamp_utc=current_tick,
-            total_dose_rate_rad_s=0.001,
-            cumulative_dose_krad=0.0,
+            total_dose_rate_rad_s=dose.total_rate_rad_s,
+            cumulative_dose_krad=dose.cumulative_krad,
             solar_array_degradation=1.0,
             thermal_alpha_degradation=1.0,
             thermal_eps_degradation=1.0,
-            radiation_dose_rate_mrad_hr=0.1,
-            sep_event_active=False,
+            radiation_dose_rate_mrad_hr=dose.rate_mrad_hr,
+            sep_event_active=is_sep_event_active(),
+            belt_dose_rate_rad_s=dose.belt_rate_rad_s,
+            gcr_dose_rate_rad_s=dose.gcr_rate_rad_s,
+            cumulative_belt_dose_krad=dose.cumulative_belt_krad,
+            radiation_zone=compute_radiation_zone(state.earth_distance_km / EARTH_RADIUS_KM),
         )
 
     def _check_anomaly(self, packet: SyntheticTelemetryPacket) -> SyntheticAnomalyEvent | None:

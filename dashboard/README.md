@@ -26,8 +26,8 @@ one shared sidebar (a **Live** toggle, or a mission-time slider when Live is off
 | Space environment | What is space around it like; can we talk to it, and how long does a signal take? | - | GOES protons, DONKI events, DSN geometry |
 | Model accuracy (for engineers) | Does the simulation match reality? | trajectory | JPL Horizons Orion trajectory |
 
-Comms and radiation are not simulated yet (fixed placeholders in `physics_models`), so
-the Mission page shows them as grey "Not simulated yet" tiles instead of a status.
+The dashboard does not show the simulated comms and radiation yet (#79), so the Mission
+page shows them as grey "Not simulated yet" tiles instead of a status.
 
 Every chart carries data-source badges (**Real** / **Synthetic** / **Placeholder**),
 a one-line plain-language summary and an "About this chart" expander. All three

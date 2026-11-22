@@ -3,12 +3,12 @@
 An invalid tick publishes nothing. This covers bad data only: a Kafka failure part way
 through sending a valid tick can still deliver some of its messages.
 
-The radiation model is still a placeholder, so its dose-unit identity and cumulative
-monotonic rule are not enforced here yet (#86).
+Cumulative dose is not compared between ticks here: the dose profile is built so it
+never decreases along a replay.
 """
 
 from dataclasses import dataclass, fields
-from math import isfinite
+from math import isclose, isfinite
 
 from contracts import (
     SyntheticCommsOutput,
@@ -19,6 +19,8 @@ from contracts import (
     SyntheticTelemetryPacket,
     SyntheticThermalOutput,
 )
+
+from physics_models.radiation import MRAD_HR_PER_RAD_S
 
 
 @dataclass(frozen=True)
@@ -107,6 +109,15 @@ def _check_comms(comms: SyntheticCommsOutput, state: SyntheticStateSnapshot) -> 
 
 
 def _check_radiation(radiation: SyntheticRadiationOutput) -> list[str]:
+    required = (
+        "belt_dose_rate_rad_s",
+        "gcr_dose_rate_rad_s",
+        "cumulative_belt_dose_krad",
+        "radiation_zone",
+    )
+    missing = [f"radiation.{name} is missing" for name in required if getattr(radiation, name) is None]
+    if missing:
+        return missing
     names = (
         "total_dose_rate_rad_s",
         "cumulative_dose_krad",
@@ -122,6 +133,13 @@ def _check_radiation(radiation: SyntheticRadiationOutput) -> list[str]:
     ]
     if not 0.0 < radiation.solar_array_degradation <= 1.0:
         errors.append("radiation.solar_array_degradation is outside (0, 1]")
+    total = radiation.total_dose_rate_rad_s
+    if not isclose(total, radiation.belt_dose_rate_rad_s + radiation.gcr_dose_rate_rad_s, rel_tol=1e-9):
+        errors.append("radiation.total_dose_rate_rad_s must equal belt plus cosmic-ray rates")
+    if not isclose(radiation.radiation_dose_rate_mrad_hr, total * MRAD_HR_PER_RAD_S, rel_tol=1e-9):
+        errors.append("radiation.radiation_dose_rate_mrad_hr must equal total rate x 3,600,000")
+    if radiation.cumulative_belt_dose_krad > radiation.cumulative_dose_krad:
+        errors.append("radiation.cumulative_belt_dose_krad exceeds cumulative_dose_krad")
     return errors
 
 

@@ -278,7 +278,9 @@ Space Network near Earth.
 
 ---
 
-## 5. Radiation Model → `SyntheticRadiationOutput` — **NOT IMPLEMENTED**
+## 5. Radiation Model → `SyntheticRadiationOutput` — implemented (`physics_models/radiation/physics.py`, #86)
+
+> The evaluation below predates #86. Contract 03 and issue #19 define the current model.
 
 ### Contract Fields (from `models.py:198-213`)
 | Field | Type | Required | Notes |
@@ -348,7 +350,9 @@ Space Network near Earth.
 
 ---
 
-## 7. Packet Assembler → `SyntheticTelemetryPacket` — **PARTIAL**
+## 7. Packet Assembler → `SyntheticTelemetryPacket` — implemented (`physics_models/packet/`, #85)
+
+> The evaluation below predates #85 and #86. Contract 04 defines the current packet.
 
 ### Contract Fields (from `models.py:234-271`)
 | Field | Type | Required | Implementation (in `runner.py`) |

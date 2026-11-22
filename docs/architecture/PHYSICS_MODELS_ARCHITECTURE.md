@@ -1,10 +1,11 @@
 # Physics Models Package — Architecture & Integration
 
 > **Implementation status (2026-10-19):** This document is the *target architecture*.
-> Implemented today: StateEngine, Thermal (3-node), Power, CrossModelBus, Kafka producer,
-> consumer (`packages/physics_models/consumer.py`, Kafka → TimescaleDB).
-> **Not implemented:** Comms, Radiation, Packet Assembler, Anomaly Detector, ML Feature
-> Builder — `runner.py` emits hardcoded placeholders for these. `kafka/topics.py` and the
+> Implemented today: StateEngine, Thermal (3-node), Power, Comms, Radiation, Packet
+> assembly and validation, CrossModelBus, Kafka producer, consumer
+> (`packages/physics_models/consumer.py`, Kafka → TimescaleDB).
+> **Not implemented:** Anomaly Detector, ML Feature Builder — `runner.py` emits
+> hardcoded placeholders for these. `kafka/topics.py` and the
 > per-model `generator.py` files shown below do not exist yet; topic strings live in the
 > producer/runner. Live topic count is **4** (`trajectory`, `telemetry`,
 > `cross_model_state`, `ml_features`); `events` awaits the anomaly detector.
