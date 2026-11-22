@@ -311,7 +311,8 @@ async def list_synthetic_power(
 
 COMMS_COLUMNS = [
     "timestamp_utc", "eirp_dbw", "free_space_path_loss_db", "received_power_dbw",
-    "eb_n0_db", "link_margin_db", "data_rate_kbps", "signal_quality", "comm_state"
+    "eb_n0_db", "link_margin_db", "data_rate_kbps", "signal_quality", "comm_state",
+    "link_loss_reason"
 ]
 
 _VERIFY_COMMS = ["timestamp_utc", "comm_state"]
@@ -366,7 +367,8 @@ async def list_synthetic_comms(
 RADIATION_COLUMNS = [
     "timestamp_utc", "total_dose_rate_rad_s", "cumulative_dose_krad",
     "solar_array_degradation", "thermal_alpha_degradation", "thermal_eps_degradation",
-    "radiation_dose_rate_mrad_hr", "sep_event_active"
+    "radiation_dose_rate_mrad_hr", "sep_event_active", "belt_dose_rate_rad_s",
+    "gcr_dose_rate_rad_s", "cumulative_belt_dose_krad", "radiation_zone"
 ]
 
 _VERIFY_RADIATION = ["timestamp_utc", "sep_event_active"]
@@ -474,7 +476,8 @@ TELEMETRY_COLUMNS = [
     "temp_electronics_bay_k", "heater_active", "thermal_state", "battery_voltage_v",
     "battery_soc_pct", "solar_array_power_w", "power_state", "signal_quality",
     "link_margin_db", "data_rate_kbps", "comm_state", "radiation_dose_rate_mrad_hr",
-    "cumulative_dose_krad", "sep_event_active", "all_nominal"
+    "cumulative_dose_krad", "sep_event_active", "all_nominal", "dsn_visibility",
+    "link_loss_reason", "radiation_zone"
 ]
 
 _VERIFY_TELEMETRY = ["timestamp_utc", "all_nominal", "thermal_state", "power_state", "comm_state"]

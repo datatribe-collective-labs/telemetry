@@ -135,6 +135,8 @@ class CommsOutput(IngestedAtMixin, Base):
     data_rate_kbps: Mapped[float] = mapped_column(Double, nullable=False)
     signal_quality: Mapped[float] = mapped_column(Double, nullable=False)
     comm_state: Mapped[str] = mapped_column(String(10), nullable=False)
+    # Nullable: NULL on rows written before the simulator produces it
+    link_loss_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     __table_args__ = (
         Index("idx_comms_output_state", "comm_state", "timestamp_utc"),
@@ -156,6 +158,11 @@ class RadiationOutput(IngestedAtMixin, Base):
     thermal_eps_degradation: Mapped[float] = mapped_column(Double, nullable=False)
     radiation_dose_rate_mrad_hr: Mapped[float] = mapped_column(Double, nullable=False)
     sep_event_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Nullable: NULL on rows written before the simulator produces them
+    belt_dose_rate_rad_s: Mapped[float | None] = mapped_column(Double, nullable=True)
+    gcr_dose_rate_rad_s: Mapped[float | None] = mapped_column(Double, nullable=True)
+    cumulative_belt_dose_krad: Mapped[float | None] = mapped_column(Double, nullable=True)
+    radiation_zone: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     __table_args__ = (
         Index("idx_radiation_output_sep", "sep_event_active", "timestamp_utc"),
@@ -213,6 +220,10 @@ class TelemetryPacket(IngestedAtMixin, Base):
     sep_event_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
     # Derived health rollup
     all_nominal: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # Nullable: NULL on rows written before the simulator produces them
+    dsn_visibility: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    link_loss_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    radiation_zone: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     __table_args__ = (
         Index("idx_telemetry_packet_all_nominal", "all_nominal", "timestamp_utc"),

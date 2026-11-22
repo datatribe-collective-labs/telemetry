@@ -2,7 +2,7 @@
 
 Every upsert refreshes ``ingested_at`` (write time; inserts get the column default),
 so re-written rows rank as newest even when the producer restarts at an earlier
-simulation time. Needs the backend's ``d5159fa9708e`` migration applied first.
+simulation time. Needs the backend's ``c4e8a1f26b3d`` migration applied first.
 """
 
 import json
@@ -165,11 +165,11 @@ class TelemetryConsumer:
             INSERT INTO comms_output (
                 timestamp_utc, eirp_dbw, free_space_path_loss_db,
                 received_power_dbw, eb_n0_db, link_margin_db,
-                data_rate_kbps, signal_quality, comm_state
+                data_rate_kbps, signal_quality, comm_state, link_loss_reason
             ) VALUES (
                 :timestamp_utc, :eirp_dbw, :free_space_path_loss_db,
                 :received_power_dbw, :eb_n0_db, :link_margin_db,
-                :data_rate_kbps, :signal_quality, :comm_state
+                :data_rate_kbps, :signal_quality, :comm_state, :link_loss_reason
             )
             ON CONFLICT (timestamp_utc) DO UPDATE SET
                 ingested_at = now(),
@@ -180,7 +180,8 @@ class TelemetryConsumer:
                 link_margin_db = EXCLUDED.link_margin_db,
                 data_rate_kbps = EXCLUDED.data_rate_kbps,
                 signal_quality = EXCLUDED.signal_quality,
-                comm_state = EXCLUDED.comm_state
+                comm_state = EXCLUDED.comm_state,
+                link_loss_reason = EXCLUDED.link_loss_reason
         """), msg.model_dump())
 
     def _insert_radiation(self, session, msg: SyntheticRadiationOutput):
@@ -189,12 +190,14 @@ class TelemetryConsumer:
                 timestamp_utc, total_dose_rate_rad_s, cumulative_dose_krad,
                 solar_array_degradation, thermal_alpha_degradation,
                 thermal_eps_degradation, radiation_dose_rate_mrad_hr,
-                sep_event_active
+                sep_event_active, belt_dose_rate_rad_s, gcr_dose_rate_rad_s,
+                cumulative_belt_dose_krad, radiation_zone
             ) VALUES (
                 :timestamp_utc, :total_dose_rate_rad_s, :cumulative_dose_krad,
                 :solar_array_degradation, :thermal_alpha_degradation,
                 :thermal_eps_degradation, :radiation_dose_rate_mrad_hr,
-                :sep_event_active
+                :sep_event_active, :belt_dose_rate_rad_s, :gcr_dose_rate_rad_s,
+                :cumulative_belt_dose_krad, :radiation_zone
             )
             ON CONFLICT (timestamp_utc) DO UPDATE SET
                 ingested_at = now(),
@@ -204,7 +207,11 @@ class TelemetryConsumer:
                 thermal_alpha_degradation = EXCLUDED.thermal_alpha_degradation,
                 thermal_eps_degradation = EXCLUDED.thermal_eps_degradation,
                 radiation_dose_rate_mrad_hr = EXCLUDED.radiation_dose_rate_mrad_hr,
-                sep_event_active = EXCLUDED.sep_event_active
+                sep_event_active = EXCLUDED.sep_event_active,
+                belt_dose_rate_rad_s = EXCLUDED.belt_dose_rate_rad_s,
+                gcr_dose_rate_rad_s = EXCLUDED.gcr_dose_rate_rad_s,
+                cumulative_belt_dose_krad = EXCLUDED.cumulative_belt_dose_krad,
+                radiation_zone = EXCLUDED.radiation_zone
         """), msg.model_dump())
 
     def _insert_packet(self, session, msg: SyntheticTelemetryPacket):
@@ -216,7 +223,7 @@ class TelemetryConsumer:
                 battery_voltage_v, battery_soc_pct, solar_array_power_w, power_state,
                 signal_quality, link_margin_db, data_rate_kbps, comm_state,
                 radiation_dose_rate_mrad_hr, cumulative_dose_krad, sep_event_active,
-                all_nominal
+                all_nominal, dsn_visibility, link_loss_reason, radiation_zone
             ) VALUES (
                 :timestamp_utc, :spacecraft_id,
                 :temp_sun_face_k, :temp_shadow_face_k, :temp_electronics_bay_k,
@@ -224,7 +231,7 @@ class TelemetryConsumer:
                 :battery_voltage_v, :battery_soc_pct, :solar_array_power_w, :power_state,
                 :signal_quality, :link_margin_db, :data_rate_kbps, :comm_state,
                 :radiation_dose_rate_mrad_hr, :cumulative_dose_krad, :sep_event_active,
-                :all_nominal
+                :all_nominal, :dsn_visibility, :link_loss_reason, :radiation_zone
             )
             ON CONFLICT (timestamp_utc) DO UPDATE SET
                 ingested_at = now(),
@@ -245,7 +252,10 @@ class TelemetryConsumer:
                 radiation_dose_rate_mrad_hr = EXCLUDED.radiation_dose_rate_mrad_hr,
                 cumulative_dose_krad = EXCLUDED.cumulative_dose_krad,
                 sep_event_active = EXCLUDED.sep_event_active,
-                all_nominal = EXCLUDED.all_nominal
+                all_nominal = EXCLUDED.all_nominal,
+                dsn_visibility = EXCLUDED.dsn_visibility,
+                link_loss_reason = EXCLUDED.link_loss_reason,
+                radiation_zone = EXCLUDED.radiation_zone
         """), msg.model_dump())
 
     def _insert_cross_model(self, session, msg: SyntheticCrossModelState):
