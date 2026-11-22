@@ -54,6 +54,8 @@ def make_row(columns):
         elif key in {'dsn_visibility','heater_active','sep_event_active','all_nominal','visible'}: out[key] = False
         elif key in {'eclipse_state'}: out[key] = 'SUNLIT'
         elif key in {'thermal_state'} or key in {'power_state'} or key in {'comm_state'}: out[key] = 'NOMINAL'
+        elif key == 'link_loss_reason': out[key] = 'NONE'
+        elif key == 'radiation_zone': out[key] = 'DEEP_SPACE'
         elif key == 'severity': out[key] = 'INFO'
         elif key == 'spacecraft_id': out[key] = 'ORION_EM2'
         elif key in {'site','complex','proton_satellite','target_id','orbit_id','des','body','source_url','event_type','anomaly_type','description','field_name','contract_reference','suggested_cause','mission_phase'}: out[key] = 'TEST'

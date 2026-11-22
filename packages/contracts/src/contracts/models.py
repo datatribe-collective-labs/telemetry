@@ -122,6 +122,10 @@ class DsnSiteGeometry(BaseModel):
 # SYNTHETIC TELEMETRY (Physics Models) - New
 # =============================================================================
 
+LinkLossReason = Literal["NONE", "MOON_BLOCKED", "OUT_OF_DSN_VIEW", "NO_POWER", "LINK_BUDGET"]
+RadiationZone = Literal["LOW_EARTH", "INNER_BELT", "OUTER_BELT", "DEEP_SPACE"]
+
+
 class SyntheticStateSnapshot(BaseModel):
     """State engine snapshot - authoritative per-tick spacecraft state from OEM/Horizons.
     
@@ -209,6 +213,8 @@ class SyntheticCommsOutput(BaseModel):
     data_rate_kbps: float = Field(..., description="Downlink data rate (kbps)")
     signal_quality: float = Field(..., description="Signal quality index (0-1)")
     comm_state: Literal["NOMINAL", "DEGRADED", "NO_LINK"] = Field(..., description="Communications link state")
+    # None on rows written before the simulator produces this field
+    link_loss_reason: LinkLossReason | None = Field(None, description="Why the downlink is unavailable (NONE when linked)")
 
 
 class SyntheticRadiationOutput(BaseModel):
@@ -221,12 +227,17 @@ class SyntheticRadiationOutput(BaseModel):
 
     timestamp_utc: datetime = Field(..., description="Tick timestamp (UTC)")
     total_dose_rate_rad_s: float = Field(..., description="Total absorbed dose rate (rad/s)")
-    cumulative_dose_krad: float = Field(..., description="Cumulative absorbed dose (krad Si)")
+    cumulative_dose_krad: float = Field(..., description="Cumulative absorbed dose (krad, water)")
     solar_array_degradation: float = Field(..., description="Solar array degradation factor (relative to BOL)")
     thermal_alpha_degradation: float = Field(..., description="Thermal coating absorptivity factor")
     thermal_eps_degradation: float = Field(..., description="Thermal coating emissivity factor")
     radiation_dose_rate_mrad_hr: float = Field(..., description="Dose rate in mrad/hr")
     sep_event_active: bool = Field(..., description="SEP event in progress")
+    # None on rows written before the simulator produces these fields
+    belt_dose_rate_rad_s: float | None = Field(None, description="Radiation-belt dose rate (rad/s, water)")
+    gcr_dose_rate_rad_s: float | None = Field(None, description="Galactic cosmic-ray dose rate (rad/s, water)")
+    cumulative_belt_dose_krad: float | None = Field(None, description="Cumulative belt dose (krad, water)")
+    radiation_zone: RadiationZone | None = Field(None, description="Current radiation region")
 
 
 class SyntheticCrossModelState(BaseModel):
@@ -280,11 +291,16 @@ class SyntheticTelemetryPacket(BaseModel):
 
     # Radiation fields
     radiation_dose_rate_mrad_hr: float = Field(..., description="Dose rate (mrad/hr)")
-    cumulative_dose_krad: float = Field(..., description="Cumulative dose (krad Si)")
+    cumulative_dose_krad: float = Field(..., description="Cumulative dose (krad, water)")
     sep_event_active: bool = Field(..., description="SEP event active")
 
     # Derived health rollup
     all_nominal: bool = Field(..., description="All subsystems nominal (thermal=power=comms=NOMINAL)")
+
+    # None on rows written before the simulator produces these fields
+    dsn_visibility: bool | None = Field(None, description="A DSN station has a clear view of Orion")
+    link_loss_reason: LinkLossReason | None = Field(None, description="Why the downlink is unavailable (NONE when linked)")
+    radiation_zone: RadiationZone | None = Field(None, description="Current radiation region")
 
 
 class SyntheticAnomalyEvent(BaseModel):
