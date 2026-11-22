@@ -2,7 +2,7 @@ apiVersion: v3.1.0
 kind: DataContract
 id: 8a0b2c4d-6e7f-4a8b-0c1d-2e3f4a5b6c7d
 name: anomaly_events
-version: 1.1.0
+version: 1.2.0
 status: active
 domain: spacecraft_digital_twin
 
@@ -13,8 +13,8 @@ description:
                  These appear as severity=CRITICAL with a direct contract reference.
       Layer 2 — Rule-based anomalies (physically valid but operationally unexpected,
                  detected via physics-baseline residuals). Severity WARNING or ALERT.
-    Published to Kafka topic `events`. Consumed by the dashboard alert system,
-    Superset anomaly explorer, and any downstream ML training pipeline.
+    Published to Kafka topic `events`. Consumed by the dashboard alert system
+    and any downstream ML training pipeline.
     The contract for anomaly *events* is deliberately separate from the contracts
     for the *telemetry* — an anomaly event is a derived data product with its
     own schema and quality guarantees.
@@ -308,7 +308,7 @@ apiVersion: v3.1.0
 kind: DataContract
 id: 9b1c3d5e-7f8a-4b9c-1d2e-3f4a5b6c7d8e
 name: ml_feature_vectors
-version: 1.1.0
+version: 1.2.0
 status: active
 domain: spacecraft_digital_twin
 
@@ -494,11 +494,9 @@ schema:
         required: true
         description: >
           radiation_dose_rate_mrad_hr / dose_rate_ceiling, where dose_rate_ceiling
-          is a configured normalization constant. The audited radiation_model_output
-          contract explicitly asserts no fixed physical ceiling for
-          radiation_dose_rate_mrad_hr, so 36,000 mrad/hr — if used — is a
-          MODEL_ASSUMPTION for ML scaling purposes only, not a physics or hardware
-          bound, and must be explicitly configurable rather than hard-coded.
+          is a configured normalization constant: a MODEL_ASSUMPTION for ML scaling
+          only, not a physics or hardware bound. radiation_model_output asserts no
+          fixed ceiling for radiation_dose_rate_mrad_hr.
         quality:
           - metric: nullValues
             mustBe: 0
@@ -566,9 +564,8 @@ schema:
         physicalType: FLOAT
         required: true
         description: >
-          1.0 if the selected radiation environment model classifies the spacecraft as
-          within its trapped-particle domain; 0.0 otherwise. Do not hard-code radial belt
-          boundaries as AP-8/AE-8 parameters [Source #5].
+          1.0 if radiation_zone is INNER_BELT or OUTER_BELT; 0.0 otherwise. Those zone
+          boundaries are a MODEL_ASSUMPTION, not AP-8/AE-8 parameters [Source #5].
           Critical context for radiation anomaly interpretation:
           dose rate spikes in belt are different anomalies from spikes in interplanetary space.
         quality:
@@ -704,8 +701,10 @@ schema:
         physicalType: FLOAT
         required: true
         description: >
-          radiation_dose_rate_mrad_hr / expected_dose_rate(r_RE).
-          1.0 = dose rate matches the configured radiation-environment baseline.
+          radiation_dose_rate_mrad_hr / expected_dose_rate(timestamp_utc), where the
+          expected rate is the radiation model's shared belt plus cosmic-ray baseline
+          at that timestamp, without any SEP contribution.
+          1.0 = dose rate matches that baseline.
           Thresholds for R1/R2 are anomaly heuristics and must not be treated as AP-8/AE-8
           validity bounds.
           Meaningful at all positions (near-zero belt rate in interplanetary space
@@ -717,13 +716,10 @@ schema:
           - type: text
             description: >
               Must be ≥ 0. Values < 0 are impossible (dose rate cannot be negative).
-              In interplanetary space (r_RE > 5.5), the denominator approaches a GCR
-              background level. The commonly cited illustrative figure of ~0.4 mrad/hr
-              is NOT ESTABLISHED BY SUPPLIED SOURCES for this review and must not be
-              treated as an authoritative GCR value; it is at most a configurable
-              placeholder pending a sourced GCR reference. Large ratios in this regime
-              require verification against the absolute dose value regardless of which
-              background figure is configured.
+              In DEEP_SPACE the denominator approaches the cosmic-ray background,
+              calibrated to 0.40 mGy/day (about 1.67 mrad/hr) in water at HERA HSU2
+              [Artemis I]. Large ratios in this regime require verification against
+              the absolute dose value.
 
       # ── Rate-of-change features ──
 
