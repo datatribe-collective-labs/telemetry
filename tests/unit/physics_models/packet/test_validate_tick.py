@@ -67,6 +67,13 @@ def test_validate_tick_rejects_mismatched_timestamp(make_outputs):
         ({"radiation": {"cumulative_dose_krad": -1.0}}, "radiation.cumulative_dose_krad must be >= 0"),
         ({"radiation": {"belt_dose_rate_rad_s": -1.0}}, "radiation.belt_dose_rate_rad_s must be >= 0"),
         ({"radiation": {"solar_array_degradation": 0.0}}, "radiation.solar_array_degradation is outside (0, 1]"),
+        ({"radiation": {"belt_dose_rate_rad_s": None}}, "radiation.belt_dose_rate_rad_s is missing"),
+        ({"radiation": {"gcr_dose_rate_rad_s": None}}, "radiation.gcr_dose_rate_rad_s is missing"),
+        ({"radiation": {"cumulative_belt_dose_krad": None}}, "radiation.cumulative_belt_dose_krad is missing"),
+        ({"radiation": {"radiation_zone": None}}, "radiation.radiation_zone is missing"),
+        ({"radiation": {"total_dose_rate_rad_s": 6e-6}}, "radiation.total_dose_rate_rad_s must equal belt plus cosmic-ray rates"),
+        ({"radiation": {"radiation_dose_rate_mrad_hr": 19.0}}, "radiation.radiation_dose_rate_mrad_hr must equal total rate x 3,600,000"),
+        ({"radiation": {"cumulative_belt_dose_krad": 2e-3}}, "radiation.cumulative_belt_dose_krad exceeds cumulative_dose_krad"),
     ],
 )
 def test_validate_tick_rejects_contract_violations(make_outputs, override, message):

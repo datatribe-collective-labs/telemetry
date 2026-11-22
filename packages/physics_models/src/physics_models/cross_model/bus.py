@@ -25,7 +25,7 @@ class CrossModelBus:
     Power -> Comms: power_state (in process only, not in the published message)
     Radiation -> Power: solar_array_degradation_factor
     Radiation -> Thermal: thermal_coating_alpha_factor, thermal_coating_eps_factor
-    Radiation -> Comms: plasma_noise_factor (1.0 until the radiation model provides it)
+    Radiation -> Comms: plasma_noise_factor (not modeled, stays 1.0)
     """
 
     # Thermal -> Power
@@ -47,8 +47,8 @@ class CrossModelBus:
     thermal_coating_alpha_factor: float = 1.0
     thermal_coating_eps_factor: float = 1.0
 
-    # Radiation -> Comms (contract 04). SyntheticRadiationOutput has no such field yet,
-    # so this stays 1.0 (no degradation) until the radiation model provides it.
+    # Radiation -> Comms (contract 04). Plasma effects are not modeled, so this stays
+    # 1.0 (no degradation); SyntheticRadiationOutput has no such field.
     plasma_noise_factor: float = 1.0
 
     # For building SyntheticCrossModelState output

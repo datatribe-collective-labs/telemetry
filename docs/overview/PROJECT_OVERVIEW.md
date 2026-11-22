@@ -64,16 +64,15 @@ Physics Models (1 Hz) → Kafka (Redpanda) → Consumer → TimescaleDB → Back
 | Gap | Owner | Status |
 |-----|-------|--------|
 | Comms Generator | Rafaela | ✅ S-band link budget (`physics_models/comms/`, #20) with DSN visibility and Moon blocking |
-| Radiation Generator | Rafaela | Not implemented — placeholder values emitted by runner |
-| Packet Assembler | Rafaela | Not implemented — runner assembles inline |
+| Radiation Generator | Rafaela | ✅ Simulated cabin dose, calibrated to Artemis I (`physics_models/radiation/`, #86) |
+| Packet Assembler | Rafaela | ✅ `physics_models/packet/` with whole-tick validation (#85) |
 | Anomaly Detector + ML Features | — | Skeleton only — placeholder values; `events` topic absent |
 | WebSocket Endpoints (`/ws/live`, `/ws/events`) | Backend | Not implemented |
 | State/Thermal/Power wiring | — | ✅ Done 2026-10-19 (OEM-driven state engine, ThermalModel3Node, PowerModel live) |
 
-> ⚠️ Radiation/packet/ml_features rows above still reflect **placeholder data** from
-> `runner.py` — they validate the *pipeline*, not model correctness. Trajectory, thermal and
-> power however are real model outputs driven by the NASA OEM arcs since 2026-10-19, and comms
-> since #20.
+> ⚠️ The ml_features row above still reflects **placeholder data** from `runner.py` — it
+> validates the *pipeline*, not model correctness. Trajectory, thermal and power are real model
+> outputs driven by the NASA OEM arcs since 2026-10-19, comms since #20 and radiation since #86.
 
 ### 2.4 📋 Key Technical Decisions (Locked In)
 
@@ -360,7 +359,7 @@ telemetry/
 │   │       ├── thermal/
 │   │       ├── power/
 │   │       ├── comms/                # S-band link budget (CommsModel)
-│   │       ├── radiation/            # placeholder (not implemented)
+│   │       ├── radiation/            # simulated cabin dose (DoseProfile)
 │   │       ├── cross_model/
 │   │       ├── anomaly/              # placeholder (not implemented)
 │   │       └── packet/               # packet assembly and whole-tick validation
