@@ -2,15 +2,15 @@ apiVersion: v3.1.0
 kind: DataContract
 id: 3b5c7d9e-1f2a-4b3c-9d4e-5f6a7b8c9d0e
 name: power_model_output
-version: 1.1.0
+version: 1.2.0
 status: active
 domain: spacecraft_digital_twin
 
 description:
   purpose: >
     Orion / Artemis II electrical power system model output. Tracks solar array
-    generation, battery state of charge, load balance, and available transmit
-    power budget. Published to Kafka topic `telemetry` at each simulation tick.
+    generation, battery state of charge, load balance, and power headroom.
+    Published to Kafka topic `telemetry` at each simulation tick.
     Hard constraints are limited to quantities established by vehicle/ground-system
     sources or mathematical definitions. Cell efficiency, battery limits, RF parameters,
     and radiation degradation are not treated as hardware limits unless specifically
@@ -210,8 +210,10 @@ schema:
         physicalType: DOUBLE
         required: true
         description: >
-          Power available above essential loads (800 W floor) for non-essential
-          loads such as the communications transmitter (150 W draw).
+          Solar power available above the essential-load floor (800 W), after the
+          0.92 distribution factor. A reporting metric: it counts solar generation
+          only, so it is 0 in shadow even with a healthy battery, and it does not
+          gate the radio (see the transmitter power rule in comms_model_output).
         quality:
           - metric: nullValues
             mustBe: 0
@@ -250,7 +252,7 @@ apiVersion: v3.1.0
 kind: DataContract
 id: 4c6d8e0f-2a3b-4c5d-0e1f-6a7b8c9d0e1f
 name: comms_model_output
-version: 1.1.0
+version: 1.2.0
 status: active
 domain: spacecraft_digital_twin
 
@@ -260,6 +262,12 @@ description:
     Implements the Friis transmission equation for the downlink from Orion
     to the NASA Deep Space Network. All bounds are derived from the physics
     of electromagnetic propagation — they are not adjustable.
+    Transmitter power rule: the transmitter runs at its configured RF power unless
+    the previous tick's power_state is CRITICAL (battery_soc_pct ≤ 10), when it is
+    off. Solar headroom (available_power_w) does not gate it. Its 150 W draw is
+    assumed to be inside the placeholder total_load_w. A transmitter that is off or
+    a blocked line of sight is modeled with an explicit loss so every field stays
+    finite and the margin is below 0.
     Published to Kafka topic `telemetry` at each simulation tick.
   authoritativeDefinitions:
     - url: https://doi.org/10.1002/9781119971009
@@ -459,34 +467,65 @@ schema:
             arguments:
               validValues: [NOMINAL, DEGRADED, NO_LINK]
 
+      - id: link_loss_reason
+        name: link_loss_reason
+        businessName: Why the downlink is unavailable
+        logicalType: string
+        physicalType: VARCHAR(20)
+        required: true
+        description: >
+          NONE when a link exists. Otherwise the single cause of NO_LINK, checked in
+          this order so geometry wins when several apply:
+          MOON_BLOCKED (a DSN complex is above its 10 degree cutoff, but the Moon blocks
+          every such line of sight), OUT_OF_DSN_VIEW (no complex is above the cutoff),
+          NO_POWER (transmitter off because the previous tick was CRITICAL),
+          LINK_BUDGET (clear view and transmitter on, but no positive margin).
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [NONE, MOON_BLOCKED, OUT_OF_DSN_VIEW, NO_POWER, LINK_BUDGET]
+          - type: text
+            description: >
+              link_loss_reason = NONE if and only if comm_state != NO_LINK.
+
 ---
 apiVersion: v3.1.0
 kind: DataContract
 id: 5d7e9f1a-3b4c-4d5e-1f2a-7b8c9d0e1f2a
 name: radiation_model_output
-version: 1.0.0
+version: 1.1.0
 status: active
 domain: spacecraft_digital_twin
 
 description:
   purpose: >
-    Radiation dose accumulation and hardware degradation model for Artemis II.
-    Based on AP-8 MAX (inner belt protons) and AE-8 MAX (outer belt electrons)
-    empirical models, calibrated to Orion's shielding (~100 mil Al equivalent
-    at avionics/array level). Dose rate is position-driven from OEM trajectory.
-    Published to Kafka topic `telemetry`. Degradation factors are published
-    to the cross-model state bus for consumption by thermal and power models.
+    Simplified simulated radiation dose for Artemis II at one cabin sensor location,
+    HERA HSU2, as absorbed dose in water. It is not the crew's actual dose. Dose
+    comes from the radiation belts and galactic cosmic rays, is calibrated to
+    published Artemis I measurements on both peak rate and integrated dose, and is
+    a pure function of timestamp along the OEM trajectory. Published to Kafka topic
+    `telemetry`. Degradation factors are published to the cross-model state bus.
   limitations: >
-    Simplified analytic fits to AP-8/AE-8, not a full SPENVIS run.
-    Shielding factor (0.15) approximates 100 mil Al transmission.
-    The single identified eclipse/belt transit for Artemis II occurs at MET 25.7h.
+    Cumulative dose counts from the start of the OEM arc, about 3.4 hours after
+    liftoff, so launch-phase exposure is not included. Artemis I flew a different
+    trajectory and attitude, and no official Artemis II dose data was found.
+    Belt targets are compared only with the outbound pass: from the perigee before
+    trans-lunar departure until the first exit to DEEP_SPACE. The partial pass at
+    the start of the arc, the inbound leg to that perigee and the return pass have
+    no Artemis I target and are reported separately.
   authoritativeDefinitions:
     - url: https://doi.org/10.1002/9781119971009
       type: businessDefinition
       description: "[Source #1] Fortescue et al., Spacecraft Systems Engineering 4th ed., Ch. 2 — general radiation environment."
     - url: https://www.nasa.gov/smallsat-institute/sst-soa/radiation/
       type: businessDefinition
-      description: NASA AP-8 MAX / AE-8 MAX trapped radiation belt models
+      description: NASA AP-8 MAX / AE-8 MAX trapped radiation belt models (background)
+    - url: https://doi.org/10.1038/s41586-024-07927-7
+      type: businessDefinition
+      description: "[Artemis I] Space radiation measurements during the Artemis I lunar mission, Nature 634, 48-52 (2024): calibration targets at HERA HSU2."
 
 team:
   - username: ${DATA_PRODUCT_OWNER}
@@ -528,36 +567,102 @@ schema:
         physicalType: DOUBLE
         required: true
         description: >
-          Total absorbed dose rate from the selected environment components after the
-          declared shielding/transport model. AP-8/AE-8 provide particle flux spectra,
-          not a universal rad/s dose rate; dose requires energy-dependent transport
-          [Source #5, Source #6].
+          Total absorbed dose rate in water at HERA HSU2: belt plus cosmic rays.
+          AP-8/AE-8 provide particle flux spectra, not a universal rad/s dose rate, so
+          this model is calibrated to measured dose [Artemis I].
         quality:
           - metric: nullValues
             mustBe: 0
           - type: text
             description: >
-              Must be ≥ 0. No hard 50, 7.5 or 10 rad/s ceiling is source-supported.
+              Must be finite, ≥ 0, and equal belt_dose_rate_rad_s + gcr_dose_rate_rad_s.
+              No hard 50, 7.5 or 10 rad/s ceiling is source-supported.
               The previous 0.050 rad/s versus 0.0075 rad/s values depended on an
               unverified scalar shielding factor and are removed [Source #5, Source #6].
+      - id: belt_dose_rate_rad_s
+        name: belt_dose_rate_rad_s
+        businessName: Trapped-belt dose rate (rad/s, water)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Radiation-belt contribution to total_dose_rate_rad_s at HERA HSU2.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: Must be finite and ≥ 0.
+
+      - id: gcr_dose_rate_rad_s
+        name: gcr_dose_rate_rad_s
+        businessName: Galactic cosmic-ray dose rate (rad/s, water)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Cosmic-ray contribution to total_dose_rate_rad_s at HERA HSU2, reduced by the
+          fraction of the sky blocked by Earth and the Moon.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: Must be finite and ≥ 0.
+
       - id: cumulative_dose_krad
         name: cumulative_dose_krad
-        businessName: Cumulative absorbed dose (krad Si)
+        businessName: Cumulative absorbed dose (krad, water)
         logicalType: number
         physicalType: DOUBLE
         required: true
         criticalDataElement: true
         description: >
-          Total absorbed dose since mission start, krad(Si), at the declared detector/
-          shielding location. Monotonically non-decreasing. A mission-total prediction
-          is not a hard validity bound without a mission-specific radiation analysis.
+          Total absorbed dose in water since the start of the OEM arc, at HERA HSU2.
+          A mission-total prediction is not a hard validity bound without a
+          mission-specific radiation analysis.
         quality:
           - metric: nullValues
             mustBe: 0
           - type: text
             description: >
-              Must be ≥ 0 and monotonically non-decreasing across ticks. No hard
+              Must be ≥ 0 and non-decreasing by timestamp over one mission replay
+              (it restarts when the replay loops). No hard
               mission-total dose interval is asserted from the supplied sources.
+      - id: cumulative_belt_dose_krad
+        name: cumulative_belt_dose_krad
+        businessName: Cumulative belt dose (krad, water)
+        logicalType: number
+        physicalType: DOUBLE
+        required: true
+        description: >
+          Belt share of cumulative_dose_krad, from the same time origin. The cosmic-ray
+          share is cumulative_dose_krad minus this field.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - type: text
+            description: >
+              Must be ≥ 0, ≤ cumulative_dose_krad, and non-decreasing by timestamp
+              over one mission replay.
+
+      - id: radiation_zone
+        name: radiation_zone
+        businessName: Current radiation region
+        logicalType: string
+        physicalType: VARCHAR(20)
+        required: true
+        description: >
+          Plain region label from geocentric distance r in Earth radii (6378.137 km):
+          LOW_EARTH r < 1.2, INNER_BELT 1.2 ≤ r < 2.5, OUTER_BELT 2.5 ≤ r < 7.0,
+          DEEP_SPACE r ≥ 7.0. These boundaries are a MODEL_ASSUMPTION for labeling and
+          calibration windows. They ignore magnetic latitude and are not AP-8/AE-8 limits.
+        quality:
+          - metric: nullValues
+            mustBe: 0
+          - metric: invalidValues
+            mustBe: 0
+            arguments:
+              validValues: [LOW_EARTH, INNER_BELT, OUTER_BELT, DEEP_SPACE]
+
       - id: solar_array_degradation
         name: solar_array_degradation
         businessName: Solar array degradation factor (relative to BOL)
@@ -565,6 +670,7 @@ schema:
         physicalType: DOUBLE
         required: true
         description: >
+          NOT MODELED in this version: fixed at 1.0 until sourced data exists.
           Multiplicative efficiency factor relative to BOL. Degradation must be derived
           from particle fluence/energy-equivalent damage using cell-specific radiation-
           response data [Source #8]. A universal 1%/krad law and 0.60 floor are not
@@ -583,6 +689,7 @@ schema:
         physicalType: DOUBLE
         required: true
         description: >
+          NOT MODELED in this version: fixed at 1.0 until sourced data exists.
           Multiplicative factor on surface absorptivity. Radiation-induced optical-property
           change should be represented as α(D) when coating test data support it [Source #9].
           The previous +0.5%/krad and +15% cap are not source-verified.
@@ -600,6 +707,7 @@ schema:
         physicalType: DOUBLE
         required: true
         description: >
+          NOT MODELED in this version: fixed at 1.0 until sourced data exists.
           Multiplicative factor on surface emissivity. Radiation-induced emissivity
           change should be represented as ε(D) when coating test data support it [Source #9].
           The previous −0.2%/krad and 0.85 floor are not source-verified.
@@ -625,7 +733,7 @@ schema:
           - type: text
             description: >
               Must equal total_dose_rate_rad_s × 3,600,000 within floating-point precision.
-              Must be ≥ 0. Same physical bound: ≤ 36,000 mrad/hr (10 rad/s equivalent).
+              Must be ≥ 0. No fixed upper bound is asserted.
 
       - id: sep_event_active
         name: sep_event_active
@@ -634,8 +742,9 @@ schema:
         physicalType: BOOLEAN
         required: true
         description: >
-          True when NOAA proton flux > 10 pfu (S1 storm threshold).
-          Sourced from SpaceWeatherSnapshot.proton_flux_pfu from DONKI.
+          True when GOES proton flux > 10 pfu (NOAA S1 storm threshold), from the data
+          ingested by pipelines.ingest.iswa_goes_protons. It is false for this flight:
+          the flux peaked at 6.57 pfu. A test or bundled flag must guard that assumption.
         quality:
           - metric: nullValues
             mustBe: 0
