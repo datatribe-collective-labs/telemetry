@@ -12,6 +12,7 @@ travel time is ignored: the Moon moves about 1 km while a signal reaches Earth.
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from math import asin, cos, degrees, radians, sin, sqrt, tau
+from typing import Literal
 
 import numpy as np
 
@@ -25,6 +26,8 @@ J2000 = datetime(2000, 1, 1, 12, tzinfo=UTC)
 SECONDS_PER_DAY = 86_400.0
 SECONDS_PER_JULIAN_CENTURY = 36_525 * SECONDS_PER_DAY
 ARCSEC_TO_RAD = radians(1 / 3600)
+
+DsnView = Literal["CLEAR", "MOON_BLOCKED", "OUT_OF_VIEW"]
 
 
 @dataclass(frozen=True)
@@ -144,10 +147,25 @@ def is_site_visible(
     )
 
 
+def compute_dsn_view(
+    sc_pos_km: np.ndarray,
+    t: datetime,
+    cutoff_deg: float = ELEVATION_CUTOFF_DEG,
+) -> DsnView:
+    """CLEAR if a complex can see the spacecraft, MOON_BLOCKED if the Moon blocks every
+    complex above its cutoff, OUT_OF_VIEW if none is above it."""
+    in_view = [s for s in DSN_SITES if compute_site_elevation_deg(s, sc_pos_km, t) >= cutoff_deg]
+    if not in_view:
+        return "OUT_OF_VIEW"
+    if any(is_site_visible(site, sc_pos_km, t, cutoff_deg) for site in in_view):
+        return "CLEAR"
+    return "MOON_BLOCKED"
+
+
 def is_dsn_visible(
     sc_pos_km: np.ndarray,
     t: datetime,
     cutoff_deg: float = ELEVATION_CUTOFF_DEG,
 ) -> bool:
     """True if at least one DSN complex has a clear view of the spacecraft."""
-    return any(is_site_visible(site, sc_pos_km, t, cutoff_deg) for site in DSN_SITES)
+    return compute_dsn_view(sc_pos_km, t, cutoff_deg) == "CLEAR"
