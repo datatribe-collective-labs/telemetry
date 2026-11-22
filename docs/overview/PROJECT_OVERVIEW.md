@@ -363,7 +363,7 @@ telemetry/
 │   │       ├── radiation/            # placeholder (not implemented)
 │   │       ├── cross_model/
 │   │       ├── anomaly/              # placeholder (not implemented)
-│   │       └── packet/               # placeholder (not implemented)
+│   │       └── packet/               # packet assembly and whole-tick validation
 │   │
 │   ├── backend/                      # FastAPI REST API
 │   │   ├── pyproject.toml

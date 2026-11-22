@@ -261,7 +261,7 @@ class SyntheticCrossModelState(BaseModel):
 class SyntheticTelemetryPacket(BaseModel):
     """Synthesized telemetry packet - primary output combining all physics models.
     
-    This is the main consumer-facing contract (dashboard, replay, Superset).
+    This is the main consumer-facing contract (dashboard, replay).
     Source: 04_cross_model_telemetry_packet.odcs.yaml -> Kafka topic 'telemetry' + TimescaleDB
     """
 

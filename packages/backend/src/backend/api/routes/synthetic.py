@@ -502,7 +502,7 @@ async def list_synthetic_telemetry_packets(
     """List synthesized telemetry packets.
     
     Primary consumer-facing output: combines thermal, power, comms, radiation
-    into a single packet mirroring Orion downlink to Mission Control.
+    into a single packet describing Orion's onboard state, including NO_LINK ticks.
     """
     conditions = []
     params: dict = {}
