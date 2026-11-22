@@ -32,6 +32,7 @@ from physics_models.oem import (
     load_latest_oem_from_store,
     load_oem_asc,
 )
+from physics_models.packet import TickOutputs, assemble_packet, validate_tick
 from physics_models.power.physics import PowerModel
 from physics_models.state_engine.dsn import compute_dsn_view, is_dsn_visible
 from physics_models.state_engine.physics import (
@@ -184,37 +185,7 @@ class SimulatorRunner:
         while self.running:
             tick_start = time.perf_counter()
 
-            # Current simulation time (replay from start_met_seconds; see _sim_seconds)
-            sim_seconds = self._sim_seconds()
-            current_tick = self.liftoff_utc + timedelta(seconds=sim_seconds)
-            met = current_tick - self.liftoff_utc
-
-            # 1. State Engine (authoritative state)
-            state = self._tick_state_engine(current_tick, met)
-            self._last_state = state  # consumed by thermal/power ticks below
-
-            # 2. Physics models (parallelizable in future)
-            thermal = self._tick_thermal(current_tick, met)
-            power = self._tick_power(current_tick, met)
-            comms = self._tick_comms(current_tick, met)
-            radiation = self._tick_radiation(current_tick, met)
-
-            # 3. Cross-model bus update (for next tick)
-            self.cross_model.update(thermal, power, comms, radiation)
-
-            # 4. Telemetry packet assembly
-            packet = self._assemble_packet(state, thermal, power, comms, radiation)
-
-            # 5. Anomaly detection
-            anomaly = self._check_anomaly(packet)
-
-            # 6. ML feature vector
-            ml_features = self._build_ml_features(packet)
-
-            # 7. Send to Kafka
-            self._send_to_kafka(state, thermal, power, comms, radiation, packet, anomaly, ml_features)
-
-            self._tick_count += 1
+            self._run_tick()
 
             # Tick pacing
             elapsed = time.perf_counter() - tick_start
@@ -227,6 +198,48 @@ class SimulatorRunner:
         # Flush on shutdown
         self.producer.flush()
         print(f"Simulation stopped after {self._tick_count} ticks")
+
+    def _run_tick(self) -> bool:
+        """Compute one tick and publish it if valid; True if it was published.
+
+        An invalid tick publishes nothing and does not reach the coupling bus, and the
+        replay clock still moves on. The models' own internal state is not rolled back.
+        """
+        # Current simulation time (replay from start_met_seconds; see _sim_seconds)
+        sim_seconds = self._sim_seconds()
+        current_tick = self.liftoff_utc + timedelta(seconds=sim_seconds)
+        met = current_tick - self.liftoff_utc
+
+        # 1. State Engine (authoritative state)
+        state = self._tick_state_engine(current_tick, met)
+        self._last_state = state  # consumed by thermal/power ticks below
+
+        # 2. Physics models (parallelizable in future)
+        thermal = self._tick_thermal(current_tick, met)
+        power = self._tick_power(current_tick, met)
+        comms = self._tick_comms(current_tick, met)
+        radiation = self._tick_radiation(current_tick, met)
+
+        # 3. Telemetry packet and ML feature vector
+        packet = assemble_packet(state, thermal, power, comms, radiation)
+        ml_features = self._build_ml_features(packet)
+
+        # 4. Validate the whole tick before anything leaves the simulator
+        errors = validate_tick(TickOutputs(state, thermal, power, comms, radiation, packet, ml_features))
+        self._tick_count += 1
+        if errors:
+            print(f"WARNING: tick {current_tick.isoformat()} not published: {'; '.join(errors)}")
+            return False
+
+        # 5. Cross-model bus update (for next tick)
+        self.cross_model.update(thermal, power, comms, radiation)
+
+        # 6. Anomaly detection
+        anomaly = self._check_anomaly(packet)
+
+        # 7. Send to Kafka
+        self._send_to_kafka(state, thermal, power, comms, radiation, packet, anomaly, ml_features)
+        return True
 
     def _tick_state_engine(self, current_tick: datetime, met: timedelta) -> SyntheticStateSnapshot:
         """State engine tick - authoritative spacecraft state from NASA OEM arcs."""
@@ -370,49 +383,6 @@ class SimulatorRunner:
             thermal_eps_degradation=1.0,
             radiation_dose_rate_mrad_hr=0.1,
             sep_event_active=False,
-        )
-
-    def _assemble_packet(
-        self,
-        state: SyntheticStateSnapshot,
-        thermal: SyntheticThermalOutput,
-        power: SyntheticPowerOutput,
-        comms: SyntheticCommsOutput,
-        radiation: SyntheticRadiationOutput,
-    ) -> SyntheticTelemetryPacket:
-        """Assemble combined telemetry packet."""
-        # All nominal if all subsystems nominal
-        all_nominal = (
-            thermal.thermal_state == "NOMINAL" and
-            power.power_state == "NOMINAL" and
-            comms.comm_state == "NOMINAL"
-        )
-
-        return SyntheticTelemetryPacket(
-            timestamp_utc=state.timestamp_utc,
-            spacecraft_id="ORION_EM2",
-            # Thermal
-            temp_sun_face_k=thermal.temp_sun_face_k,
-            temp_shadow_face_k=thermal.temp_shadow_face_k,
-            temp_electronics_bay_k=thermal.temp_electronics_bay_k,
-            heater_active=thermal.heater_active,
-            thermal_state=thermal.thermal_state,
-            # Power
-            battery_voltage_v=power.battery_voltage_v,
-            battery_soc_pct=power.battery_soc_pct,
-            solar_array_power_w=power.solar_array_power_w,
-            power_state=power.power_state,
-            # Comms
-            signal_quality=comms.signal_quality,
-            link_margin_db=comms.link_margin_db,
-            data_rate_kbps=comms.data_rate_kbps,
-            comm_state=comms.comm_state,
-            # Radiation
-            radiation_dose_rate_mrad_hr=radiation.radiation_dose_rate_mrad_hr,
-            cumulative_dose_krad=radiation.cumulative_dose_krad,
-            sep_event_active=radiation.sep_event_active,
-            # Derived
-            all_nominal=all_nominal,
         )
 
     def _check_anomaly(self, packet: SyntheticTelemetryPacket) -> SyntheticAnomalyEvent | None:
