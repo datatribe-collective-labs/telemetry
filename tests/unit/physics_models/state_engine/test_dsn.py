@@ -8,6 +8,7 @@ from physics_models.state_engine import dsn
 from physics_models.state_engine.dsn import (
     DSN_SITES,
     DsnSite,
+    compute_dsn_view,
     compute_gmst_rad,
     compute_precession_matrix,
     compute_site_elevation_deg,
@@ -118,6 +119,23 @@ def test_is_dsn_visible_true_when_moon_is_on_the_far_side_of_earth(monkeypatch):
     spacecraft = _overhead_spacecraft(DSN_SITES[1])
     monkeypatch.setattr(dsn, "compute_moon_position_km", lambda _t: -spacecraft)
     assert is_dsn_visible(spacecraft, EPOCH) is True
+
+
+def test_compute_dsn_view_clear_when_overhead_of_a_site(monkeypatch):
+    spacecraft = _overhead_spacecraft(DSN_SITES[1])
+    monkeypatch.setattr(dsn, "compute_moon_position_km", lambda _t: -spacecraft)
+    assert compute_dsn_view(spacecraft, EPOCH) == "CLEAR"
+
+
+def test_compute_dsn_view_out_of_view_when_no_site_reaches_the_cutoff():
+    spacecraft = _overhead_spacecraft(DSN_SITES[2])
+    assert compute_dsn_view(spacecraft, EPOCH, cutoff_deg=90.1) == "OUT_OF_VIEW"
+
+
+def test_compute_dsn_view_moon_blocked_when_moon_blocks_every_site_in_view(monkeypatch):
+    spacecraft = _overhead_spacecraft(DSN_SITES[1])
+    monkeypatch.setattr(dsn, "compute_moon_position_km", lambda _t: spacecraft * 0.99)
+    assert compute_dsn_view(spacecraft, EPOCH) == "MOON_BLOCKED"
 
 
 def test_is_site_visible_false_below_cutoff_even_with_a_clear_path(monkeypatch):

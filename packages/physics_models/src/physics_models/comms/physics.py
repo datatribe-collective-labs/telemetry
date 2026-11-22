@@ -17,10 +17,13 @@ from dataclasses import dataclass
 from math import log10, pi
 from typing import Literal
 
+from physics_models.state_engine.dsn import DsnView
+
 SPEED_OF_LIGHT_M_S = 299_792_458.0
 BOLTZMANN_DBW_PER_K_HZ = 10 * log10(1.380649e-23)  # −228.60 dBW/(K·Hz)
 
 CommState = Literal["NOMINAL", "DEGRADED", "NO_LINK"]
+LinkLossReason = Literal["NONE", "MOON_BLOCKED", "OUT_OF_DSN_VIEW", "NO_POWER", "LINK_BUDGET"]
 
 
 def compute_free_space_path_loss(distance_km: float, frequency_hz: float) -> float:
@@ -48,22 +51,24 @@ def compute_eb_n0(
     )
 
 
-def compute_rf_power(
-    max_rf_power_w: float,
-    available_power_w: float,
-    transmitter_dc_power_w: float,
-) -> float:
-    """RF output the power headroom allows (contracts 03/04: power gates transmit power).
-
-    Full power when the headroom covers the transmitter's DC draw, scaled linearly
-    below that, 0 (transmitter off) with no headroom.
-    """
-    return max_rf_power_w * min(1.0, max(0.0, available_power_w) / transmitter_dc_power_w)
-
-
 def compute_signal_quality(link_margin_db: float, span_db: float = 20.0) -> float:
     """Normalised link margin (ODCS 03): 0.0 at threshold, 1.0 at +span_db above it."""
     return min(1.0, max(0.0, link_margin_db / span_db))
+
+
+def compute_link_loss_reason(
+    comm_state: CommState,
+    dsn_view: DsnView,
+    transmitter_on: bool,
+) -> LinkLossReason:
+    """The single cause of NO_LINK (ODCS 03); geometry wins when several apply."""
+    if comm_state != "NO_LINK":
+        return "NONE"
+    if dsn_view == "MOON_BLOCKED":
+        return "MOON_BLOCKED"
+    if dsn_view == "OUT_OF_VIEW":
+        return "OUT_OF_DSN_VIEW"
+    return "LINK_BUDGET" if transmitter_on else "NO_POWER"
 
 
 @dataclass(frozen=True)
@@ -78,6 +83,7 @@ class CommsLink:
     data_rate_kbps: float
     signal_quality: float
     comm_state: CommState
+    link_loss_reason: LinkLossReason
 
 
 @dataclass
@@ -88,7 +94,6 @@ class CommsModel:
     downlink_frequency_hz: float = 2216.5e6  # Artemis I decode
     max_rf_power_w: float = 10.0  # MODEL_ASSUMPTION: not published (Apollo USB: 5-20 W)
     tx_antenna_gain_dbi: float = 2.07  # calibrated: EIRP 12.07 dBW (see module docstring)
-    transmitter_dc_power_w: float = 150.0  # contract 03 (available_power_w description)
 
     # DSN 34-m BWG receiver (DSN 810-005 module 104, Table 6, Rev. E)
     dsn_antenna_gain_dbi: float = 56.50  # 56.8 dBi at 2295 MHz, scaled by 20·log10(f/f0)
@@ -104,7 +109,7 @@ class CommsModel:
     data_rates_kbps: tuple[float, ...] = (1939.4, 1250.0, 512.0, 256.0, 128.0, 64.0, 16.0)
     signal_quality_span_db: float = 20.0  # contract 03
 
-    # Transmitter off (no headroom) is modelled as a negligible RF power so every field
+    # Transmitter off (battery CRITICAL) is modelled as a negligible RF power so every field
     # stays finite (contract: no nulls) and the margin is far below 0 at any range.
     rf_power_off_w: float = 1e-12
     # No DSN complex in view: an explicit extra loss, for the same reason. FSPL stays the
@@ -114,34 +119,27 @@ class CommsModel:
     def step(
         self,
         earth_distance_km: float,
-        available_power_w: float | None,
+        transmitter_on: bool = True,
         plasma_noise_factor: float = 1.0,
-        dsn_visible: bool = True,
+        dsn_view: DsnView = "CLEAR",
     ) -> CommsLink:
         """Link budget for one tick.
 
         Args:
             earth_distance_km: Earth-to-spacecraft distance (km)
-            available_power_w: Power headroom from the previous power tick (W);
-                None before the first power tick (transmitter at full power)
+            transmitter_on: False when the previous power tick was CRITICAL (ODCS 03)
             plasma_noise_factor: Quality multiplier from the radiation model (1.0 = none)
-            dsn_visible: False when no DSN complex is in view (always NO_LINK)
+            dsn_view: DSN geometry; anything but CLEAR is always NO_LINK
 
         The highest rate whose margin reaches operational_margin_db is NOMINAL. If none
         does, the lowest rate is DEGRADED while its margin is still above 0; otherwise
         NO_LINK (rate 0, budget reported at the lowest rate).
         """
-        if available_power_w is None:
-            rf_power_w = self.max_rf_power_w
-        else:
-            rf_power_w = compute_rf_power(
-                self.max_rf_power_w, available_power_w, self.transmitter_dc_power_w
-            )
-        rf_power_w = max(rf_power_w, self.rf_power_off_w)
+        rf_power_w = self.max_rf_power_w if transmitter_on else self.rf_power_off_w
 
         eirp = 10 * log10(rf_power_w) + self.tx_antenna_gain_dbi
         fspl = compute_free_space_path_loss(earth_distance_km, self.downlink_frequency_hz)
-        misc_loss = self.misc_loss_db + (0.0 if dsn_visible else self.blocked_signal_loss_db)
+        misc_loss = self.misc_loss_db + (0.0 if dsn_view == "CLEAR" else self.blocked_signal_loss_db)
         received = eirp - fspl + self.dsn_antenna_gain_dbi - misc_loss
         n0 = compute_noise_density(self.system_noise_temp_k)
 
@@ -176,4 +174,5 @@ class CommsModel:
             data_rate_kbps=data_rate,
             signal_quality=quality,
             comm_state=state,
+            link_loss_reason=compute_link_loss_reason(state, dsn_view, transmitter_on),
         )

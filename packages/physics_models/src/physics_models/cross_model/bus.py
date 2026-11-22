@@ -22,7 +22,7 @@ class CrossModelBus:
 
     Thermal -> Power: electronics_bay_temp_k
     Power -> Thermal: power_dissipation_w
-    Power -> Comms: available_power_w
+    Power -> Comms: power_state (in process only, not in the published message)
     Radiation -> Power: solar_array_degradation_factor
     Radiation -> Thermal: thermal_coating_alpha_factor, thermal_coating_eps_factor
     Radiation -> Comms: plasma_noise_factor (1.0 until the radiation model provides it)
@@ -34,8 +34,11 @@ class CrossModelBus:
     # Power -> Thermal
     power_dissipation_w: float = 0.0
 
-    # Power -> Comms (None before the first power tick)
+    # Power headroom, published for monitoring (None before the first power tick)
     available_power_w: float | None = None
+
+    # Power -> Comms (None before the first power tick: transmitter on)
+    power_state: str | None = None
 
     # Radiation -> Power
     solar_array_degradation_factor: float = 1.0
@@ -74,6 +77,7 @@ class CrossModelBus:
         self.electronics_bay_temp_k = thermal.temp_electronics_bay_k
         self.power_dissipation_w = power.total_load_w
         self.available_power_w = power.available_power_w
+        self.power_state = power.power_state
         self.solar_array_degradation_factor = radiation.solar_array_degradation
         self.thermal_coating_alpha_factor = radiation.thermal_alpha_degradation
         self.thermal_coating_eps_factor = radiation.thermal_eps_degradation
@@ -96,6 +100,7 @@ class CrossModelBus:
         self.electronics_bay_temp_k = 293.15
         self.power_dissipation_w = 0.0
         self.available_power_w = None
+        self.power_state = None
         self.solar_array_degradation_factor = 1.0
         self.thermal_coating_alpha_factor = 1.0
         self.thermal_coating_eps_factor = 1.0

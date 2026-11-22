@@ -5,8 +5,8 @@ from physics_models.comms.physics import (
     CommsModel,
     compute_eb_n0,
     compute_free_space_path_loss,
+    compute_link_loss_reason,
     compute_noise_density,
-    compute_rf_power,
     compute_signal_quality,
 )
 
@@ -15,7 +15,7 @@ __all__ = [
     "CommsModel",
     "compute_eb_n0",
     "compute_free_space_path_loss",
+    "compute_link_loss_reason",
     "compute_noise_density",
-    "compute_rf_power",
     "compute_signal_quality",
 ]

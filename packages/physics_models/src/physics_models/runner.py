@@ -33,7 +33,7 @@ from physics_models.oem import (
     load_oem_asc,
 )
 from physics_models.power.physics import PowerModel
-from physics_models.state_engine.dsn import is_dsn_visible
+from physics_models.state_engine.dsn import compute_dsn_view, is_dsn_visible
 from physics_models.state_engine.physics import (
     compute_eclipse_state,
     compute_solar_flux,
@@ -339,14 +339,21 @@ class SimulatorRunner:
     def _tick_comms(self, current_tick: datetime, met: timedelta) -> SyntheticCommsOutput:
         """Comms model tick - S-band link budget (CommsModel).
 
-        Power headroom comes from the previous tick via the bus (contract 04). The
-        link is blocked while the state engine reports no DSN complex in view.
+        The transmitter is off only if the previous tick's battery state was CRITICAL
+        (contract 03). The link is blocked while the state engine reports no clear DSN
+        view; the geometry is only re-examined then, to name the cause.
         """
+        import numpy as np
+
+        state = self._last_state
+        dsn_view = "CLEAR"
+        if not state.dsn_visibility:
+            dsn_view = compute_dsn_view(np.array([state.x_km, state.y_km, state.z_km]), current_tick)
         link = self.comms_model.step(
-            earth_distance_km=self._last_state.earth_distance_km,
-            available_power_w=self.cross_model.available_power_w,
+            earth_distance_km=state.earth_distance_km,
+            transmitter_on=self.cross_model.power_state != "CRITICAL",
             plasma_noise_factor=self.cross_model.plasma_noise_factor,
-            dsn_visible=self._last_state.dsn_visibility,
+            dsn_view=dsn_view,
         )
         return SyntheticCommsOutput(timestamp_utc=current_tick, **asdict(link))
 

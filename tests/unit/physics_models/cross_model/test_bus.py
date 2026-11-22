@@ -13,7 +13,11 @@ from physics_models.cross_model import CrossModelBus
 T0 = datetime(2026, 4, 2, 2, 0, tzinfo=UTC)
 
 
-def _outputs(available_power_w: float = 1_234.0, signal_quality: float = 0.25):
+def _outputs(
+    available_power_w: float = 1_234.0,
+    signal_quality: float = 0.25,
+    power_state: str = "NOMINAL",
+):
     thermal = SyntheticThermalOutput(
         timestamp_utc=T0, temp_sun_face_k=300.0, temp_shadow_face_k=200.0,
         temp_electronics_bay_k=295.0, q_solar_absorbed_w=0.0, q_radiated_w=0.0,
@@ -24,7 +28,7 @@ def _outputs(available_power_w: float = 1_234.0, signal_quality: float = 0.25):
         timestamp_utc=T0, solar_array_power_w=2_000.0, array_efficiency=0.28,
         total_load_w=1_200.0, battery_soc_pct=90.0, battery_voltage_v=28.0,
         battery_current_a=10.0, net_power_w=800.0, available_power_w=available_power_w,
-        power_state="NOMINAL",
+        power_state=power_state,
     )
     comms = SyntheticCommsOutput(
         timestamp_utc=T0, eirp_dbw=12.0, free_space_path_loss_db=200.0,
@@ -62,3 +66,26 @@ def test_reset_clears_available_power():
     bus.update(*_outputs())
     bus.reset()
     assert bus.available_power_w is None
+
+
+def test_power_state_is_none_before_first_update():
+    assert CrossModelBus().power_state is None
+
+
+def test_update_passes_power_state_to_next_tick():
+    bus = CrossModelBus()
+    bus.update(*_outputs(power_state="CRITICAL"))
+    assert bus.power_state == "CRITICAL"
+
+
+def test_power_state_is_not_in_the_published_message():
+    bus = CrossModelBus()
+    bus.update(*_outputs(power_state="CRITICAL"))
+    assert "power_state" not in bus.to_cross_model_state(T0).model_dump()
+
+
+def test_reset_clears_power_state():
+    bus = CrossModelBus()
+    bus.update(*_outputs(power_state="CRITICAL"))
+    bus.reset()
+    assert bus.power_state is None
