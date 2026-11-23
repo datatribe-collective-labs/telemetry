@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from dashboard.src.prototype.views._controls import mission_clock, mission_day
-from dashboard.src.prototype.views._timeline import break_at_jumps
+from dashboard.src.prototype.views._timeline import thin
 
 REAL_COLOR = "#1F77B4"  # same blue/orange as the Real/Synthetic badges
 SYN_COLOR = "#FF7F0E"
@@ -188,7 +188,7 @@ def trajectory_map(real_df: pd.DataFrame, syn_df: pd.DataFrame, three_d: bool,
                                "diamond" if three_d else "star", REAL_COLOR, 14, 120, 10))
 
     if not syn_df.empty:
-        syn_line = break_at_jumps(syn_df)
+        syn_line = thin(syn_df, AXES)
         fig.add_trace(trace(**xyz(syn_line), mode="lines", name="Our simulation (digital twin)",
                             line={"color": SYN_COLOR, "width": 3}, connectgaps=False,
                             customdata=hover_fields(syn_line), hovertemplate=hover % "Simulated (digital twin)"))
