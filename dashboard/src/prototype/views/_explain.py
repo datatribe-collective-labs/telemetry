@@ -38,9 +38,11 @@ SOURCES: dict[str, tuple[Source, ...]] = {
     "health.temperature": ("synthetic",),
     "health.battery": ("synthetic",),
     "health.power": ("synthetic",),
+    "environment.answers": ("real",),
     "environment.particles": ("real",),
     "environment.contact_now": ("real",),
     "environment.windows": ("real",),
+    "environment.flyby": ("real",),
     "accuracy.separation": ("real", "synthetic"),
 }
 
@@ -60,12 +62,16 @@ SUMMARIES: dict[str, str] = {
     "when Orion is in shadow (grey bands) and recharges in sunlight.",
     "health.power": "Power from the solar panels versus power the spacecraft uses. When the "
     "orange line is below the grey one, the battery makes up the difference.",
+    "environment.answers": "The two short answers for the whole flight, whatever time range is "
+    "selected in the sidebar.",
     "environment.particles": "Energetic particles from the Sun, measured near Earth. Inside the "
     "coloured bands counts as a solar radiation storm; the diamonds below are solar events.",
     "environment.contact_now": "NASA talks to Orion through three giant antenna sites around the "
-    "world. A site can only reach Orion when Orion is above its horizon.",
+    "world. A site can reach Orion when Orion is above its horizon and the Moon isn't in the way.",
     "environment.windows": "When each site could reach Orion. Red bands are times when no site "
-    "could.",
+    "could, and the blue band is the planned blackout behind the Moon.",
+    "environment.flyby": "As Orion passed behind the Moon, the Moon blocked the radio signal, so "
+    "nobody on Earth could reach the crew until it came out the other side.",
     "accuracy.separation": "How many km the simulated Orion is from the real one at the same "
     "moment. Lower is better; a few km over a 400,000 km trip is a very good match.",
 }
@@ -169,6 +175,33 @@ which affects how much sunlight the panels get and when shadow happens.
 
 **Why it matters:** This balance decides whether the battery fills up or runs down.
 """,
+    "environment.answers": """
+**What:** Two answers about the whole flight. The first compares the highest flux of
+≥10 MeV solar protons (NOAA GOES, via NASA iSWA) with NOAA's solar radiation storm level,
+10 pfu. The second is the share of the flight when at least one Deep Space Network site
+could reach Orion, from hourly JPL Horizons geometry minus NASA's planned Moon blackout.
+
+**How to read it:** "No solar radiation storm" is about energetic particles only. NASA's
+DONKI database also lists geomagnetic storms during the flight. Those are disturbances of
+Earth's magnetic field, a different kind of storm, shown in the event strip below. GOES
+data is NOAA's provisional real-time product.
+
+**Why it matters:** A solar particle storm is the main radiation danger beyond Earth's
+magnetic shield, and contact with Earth is how the crew gets support.
+""",
+    "environment.flyby": """
+**What:** The communications blackout while Orion passed behind the Moon on April 6.
+
+**How to read it:** The times are NASA's **planned** window, 6:44 to 7:25 p.m. EDT (22:44
+to 23:25 UTC). NASA's flight log reports the signal returning around 7:24 p.m. EDT, without
+an exact time. Our simulation, on the Mission page, puts its blackout at 22:43 to 23:23 UTC,
+1 to 2 minutes earlier. This page stays with NASA's published times because it shows real
+data only.
+
+**Why it matters:** The antenna geometry alone says Canberra could reach Orion, because
+Orion was high above its horizon. Only the Moon stood in the way.
+[NASA flight day 6 updates](https://www.nasa.gov/blogs/missions/2026/04/06/artemis-ii-flight-day-6-lunar-flyby-updates)
+""",
     "environment.particles": """
 **What:** The top chart is the flux of high-energy protons (≥10 MeV) from the Sun,
 measured by NOAA's GOES satellites near Earth, via NASA iSWA. The strip below marks solar
@@ -192,7 +225,8 @@ simulation.
 **How to read it:** "Can reach Orion" means Orion was at least 10° above that site's
 horizon. That cutoff is a model assumption chosen in this project (low over the horizon
 the signal passes through more air), not an official DSN rule. The positions are real
-geometry from JPL Horizons, in hourly steps. The signal time is Horizons' one-way light
+geometry from JPL Horizons, in hourly steps. During NASA's planned Moon blackout, a site
+with Orion above its horizon shows "Blocked by the Moon". The signal time is Horizons' one-way light
 time: radio travels at the speed of light, about 300,000 km per second, so near the Moon
 a message needs over a second each way.
 
@@ -206,8 +240,10 @@ a split-second reaction is handled on board, by the crew or Orion's computers, n
 
 **How to read it:** Bars from different sites take turns as Earth rotates. Red bands mark
 times when no site could reach Orion, which is when the spacecraft would have to store its
-data until contact returns. The orange line is the current moment. Hourly data, so bar
-edges are accurate to about an hour.
+data until contact returns. The blue band is NASA's planned Moon blackout, the only edge
+here with minute precision. The orange line is the current moment. The other bar edges come
+from hourly data, so they are accurate to about an hour, and short gaps can look different
+from the minute-by-minute simulation on the Mission page.
 
 **Why it matters:** It shows how continuous contact with the crew was.
 """,

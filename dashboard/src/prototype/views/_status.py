@@ -1,5 +1,9 @@
 """Plain-language wording and colors for the models' state codes."""
 
+from dataclasses import dataclass
+
+import pandas as pd
+
 THERMAL_STATUS: dict[str, tuple[str, str]] = {
     "NOMINAL": ("Temperature OK", "green"),
     "COLD_SURVIVAL": ("Too cold, heater on", "blue"),
@@ -41,6 +45,14 @@ RADIATION_ZONES: dict[str, tuple[str, str, str]] = {
 }
 
 MGY_PER_KRAD = 10_000  # 1 krad = 10 Gy
+STORM_PFU = 10  # NOAA S1, on the >=10 MeV integral proton flux
+
+
+@dataclass(frozen=True)
+class StormSummary:
+    storm: bool
+    peak_pfu: float
+    peak_time: pd.Timestamp
 
 
 def status(table: dict[str, tuple[str, str]], state: str) -> tuple[str, str]:
@@ -72,6 +84,18 @@ def link_needs_attention(comm_state: str, reason: str | None) -> bool:
 def radiation_zone(zone: str | None) -> tuple[str, str, str]:
     """(label, color, sentence); rows written before the zone existed have none."""
     return RADIATION_ZONES.get(zone, ("Not available", "gray", "No radiation zone for this moment."))
+
+
+def storm_summary(goes: pd.DataFrame, start) -> StormSummary | None:
+    """Did the proton flux reach NOAA's storm level from `start` on? None without data."""
+    if goes.empty:
+        return None
+    flux = goes.dropna(subset=["p10_pfu"])
+    flux = flux[flux["time"] >= pd.Timestamp(start)]
+    if flux.empty:
+        return None
+    peak = flux.loc[flux["p10_pfu"].idxmax()]
+    return StormSummary(bool(peak["p10_pfu"] >= STORM_PFU), float(peak["p10_pfu"]), peak["time"])
 
 
 def format_dose(krad: float) -> str:
