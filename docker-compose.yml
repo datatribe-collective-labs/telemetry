@@ -67,6 +67,9 @@ services:
       dockerfile: packages/physics_models/Dockerfile
     environment:
       PHYSICS_MODELS_CONFIG: /app/packages/physics_models/configs/docker.yaml
+      # runner.py reports through print(); without this, Python buffers it and
+      # `docker compose logs` stays empty (#99).
+      PYTHONUNBUFFERED: "1"
       # Demo replay speed / seek (1.0 = real-time; 300 ≈ flyby in ~24 min)
       PHYSICS_MODELS_TIME_SCALE: ${PHYSICS_MODELS_TIME_SCALE:-1.0}
       PHYSICS_MODELS_START_MET_SECONDS: ${PHYSICS_MODELS_START_MET_SECONDS:-0.0}
