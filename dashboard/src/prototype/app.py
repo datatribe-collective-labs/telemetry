@@ -1,8 +1,9 @@
 """Artemis II Digital Twin Dashboard — Streamlit Prototype v1.
 
-Four pages, written for non-experts first:
+Five pages, written for non-experts first:
   Mission            where is Orion, and is it OK?
   Spacecraft health  temperature, battery, power (synthetic)
+  Radiation journey  simulated cabin dose over the whole flight (synthetic)
   Space environment  solar particles, solar events, antenna contact (real)
   Model accuracy     simulated vs real trajectory (for engineers)
 
@@ -40,6 +41,7 @@ pages = {
     "Artemis II digital twin": [
         st.Page("views/mission.py", title="Mission", icon="🚀", default=True),
         st.Page("views/health.py", title="Spacecraft health", icon="🩺"),
+        st.Page("views/radiation.py", title="Radiation journey", icon="☢️"),
         st.Page("views/environment.py", title="Space environment", icon="☀️"),
     ],
     "For engineers": [
