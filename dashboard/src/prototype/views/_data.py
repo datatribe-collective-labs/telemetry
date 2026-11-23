@@ -14,10 +14,14 @@ import streamlit as st
 from dashboard.src.prototype.data.backend_api import MAX_LIMIT, get_api
 from dashboard.src.prototype.views._live import CACHE_TTL_S, current_run
 
-# Newest simulated ticks to load (1 Hz, so ~2.8 h of replay). Real tables are small.
-MAX_SYNTHETIC_ROWS = 10_000
+# Simulated ticks to load: a full mission is 12,834. Real tables are small.
+MAX_SYNTHETIC_ROWS = 15_000
 MAX_REAL_ROWS = 20_000
 REAL_TTL_S = 600
+# The whole mission reloads at most this often; each refresh only adds the newest rows.
+# At 1 tick/s, TAIL_ROWS must stay above HISTORY_TTL_S or a gap opens between the two.
+HISTORY_TTL_S = 60
+TAIL_ROWS = 100
 
 
 def fetch_all(fetch_page: Callable, *, page_size: int = MAX_LIMIT, max_rows: int = MAX_REAL_ROWS, **kwargs) -> list:
@@ -42,30 +46,78 @@ def to_frame(items: list, time_column: str) -> pd.DataFrame:
     return df.drop_duplicates(subset=time_column).sort_values(time_column, ignore_index=True)
 
 
-def _synthetic(fetch_page: Callable, date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
-    # Newest-written first, so the most recent ticks are kept and current_run() can
-    # drop rows left behind by an earlier producer run. Rows can repeat across pages
-    # while the producer is writing; to_frame() de-duplicates them.
+def merge_tail(history: pd.DataFrame, tail_items: list) -> pd.DataFrame:
+    """The mission up to the newest tick: stored history plus the newest-written rows.
+
+    `tail_items` are newest-written first. The table can still hold later rows from the
+    previous replay loop, so history is cut at the newest tick; tail rows win on overlap.
+    """
+    tail = to_frame(current_run(tail_items), "timestamp_utc")
+    if tail.empty:
+        return tail
+    latest = tail["timestamp_utc"].max()
+    past = history[history["timestamp_utc"] <= latest] if not history.empty else history
+    if past.empty:
+        return tail
+    merged = pd.concat([past, tail], ignore_index=True)
+    return merged.drop_duplicates(subset="timestamp_utc", keep="last").sort_values("timestamp_utc", ignore_index=True)
+
+
+def _endpoint(table: str) -> Callable:
+    return getattr(get_api(), f"get_synthetic_{table}")
+
+
+@st.cache_data(ttl=HISTORY_TTL_S, show_spinner=False)
+def _history(table: str, date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
+    # Simulation-time order: a loop rewrites rows in place, so pages don't shift under it.
     items = fetch_all(
-        fetch_page, max_rows=MAX_SYNTHETIC_ROWS, date_from=date_from, date_to=date_to,
-        order="desc", sort_by="ingested_at",
+        _endpoint(table), max_rows=MAX_SYNTHETIC_ROWS, date_from=date_from, date_to=date_to,
+        order="desc", sort_by="timestamp_utc",
     )
-    return to_frame(current_run(items), "timestamp_utc")
+    return to_frame(items, "timestamp_utc")
+
+
+def _synthetic(table: str, date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
+    fetch_page = _endpoint(table)
+    history = _history(table, date_from, date_to)  # before the tail, so the tail is newer
+    if len(history) >= MAX_SYNTHETIC_ROWS:
+        # More rows than one mission (e.g. a long 1x local run): history may not reach the
+        # current tick, so load the newest-written rows. Rows can repeat across pages
+        # while the producer is writing; to_frame() de-duplicates them.
+        items = fetch_all(
+            fetch_page, max_rows=MAX_SYNTHETIC_ROWS, date_from=date_from, date_to=date_to,
+            order="desc", sort_by="ingested_at",
+        )
+        return to_frame(current_run(items), "timestamp_utc")
+    tail = fetch_page(
+        limit=TAIL_ROWS, offset=0, date_from=date_from, date_to=date_to, order="desc", sort_by="ingested_at",
+    )
+    return merge_tail(history, tail.items)
 
 
 @st.cache_data(ttl=CACHE_TTL_S, show_spinner=False)
 def synthetic_state(date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
-    return _synthetic(get_api().get_synthetic_state, date_from, date_to)
+    return _synthetic("state", date_from, date_to)
 
 
 @st.cache_data(ttl=CACHE_TTL_S, show_spinner=False)
 def synthetic_thermal(date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
-    return _synthetic(get_api().get_synthetic_thermal, date_from, date_to)
+    return _synthetic("thermal", date_from, date_to)
 
 
 @st.cache_data(ttl=CACHE_TTL_S, show_spinner=False)
 def synthetic_power(date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
-    return _synthetic(get_api().get_synthetic_power, date_from, date_to)
+    return _synthetic("power", date_from, date_to)
+
+
+@st.cache_data(ttl=CACHE_TTL_S, show_spinner=False)
+def synthetic_comms(date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
+    return _synthetic("comms", date_from, date_to)
+
+
+@st.cache_data(ttl=CACHE_TTL_S, show_spinner=False)
+def synthetic_radiation(date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
+    return _synthetic("radiation", date_from, date_to)
 
 
 @st.cache_data(ttl=REAL_TTL_S, show_spinner=False)

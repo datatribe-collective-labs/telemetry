@@ -12,8 +12,8 @@ from dashboard.src.prototype.views._live import REFRESH_INTERVAL, plot
 from dashboard.src.prototype.views._phases import mark_phases, mission_phases
 from dashboard.src.prototype.views._status import POWER_STATUS, THERMAL_STATUS, status
 from dashboard.src.prototype.views._timeline import (
-    break_at_jumps,
     jump_gap,
+    thin,
     true_intervals,
 )
 
@@ -39,7 +39,7 @@ def _shade(fig: go.Figure, spans, color: str, label: str) -> None:
 
 
 def _temperature_chart(thermal: pd.DataFrame, shadow) -> go.Figure:
-    df = break_at_jumps(thermal.assign(bay_c=thermal["temp_electronics_bay_k"] - K_TO_C))
+    df = thin(thermal.assign(bay_c=thermal["temp_electronics_bay_k"] - K_TO_C), ["bay_c"])
     fig = go.Figure()
     fig.add_hrect(y0=BAY_COLD_C, y1=BAY_HOT_C, fillcolor="green", opacity=0.08, line_width=0, layer="below",
                   name="Safe range", showlegend=True)
@@ -54,7 +54,7 @@ def _temperature_chart(thermal: pd.DataFrame, shadow) -> go.Figure:
 
 
 def _battery_chart(power: pd.DataFrame, shadow) -> go.Figure:
-    df = break_at_jumps(power)
+    df = thin(power, ["battery_soc_pct"])
     fig = go.Figure()
     _shade(fig, shadow, "gray", "In shadow")
     fig.add_trace(go.Scatter(x=df["timestamp_utc"], y=df["battery_soc_pct"], name="Battery charge",
@@ -67,7 +67,8 @@ def _battery_chart(power: pd.DataFrame, shadow) -> go.Figure:
 
 
 def _power_chart(power: pd.DataFrame, shadow) -> go.Figure:
-    df = break_at_jumps(power.assign(made_kw=power["solar_array_power_w"] / 1000, used_kw=power["total_load_w"] / 1000))
+    df = thin(power.assign(made_kw=power["solar_array_power_w"] / 1000, used_kw=power["total_load_w"] / 1000),
+              ["made_kw", "used_kw"])
     fig = go.Figure()
     _shade(fig, shadow, "gray", "In shadow")
     fig.add_trace(go.Scatter(x=df["timestamp_utc"], y=df["made_kw"], name="Made by solar panels",

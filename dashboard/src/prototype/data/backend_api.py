@@ -24,7 +24,9 @@ from contracts import (
     MissionEventResponse,
     MoonEphemerisResponse,
     OrionEphemerisResponse,
+    SyntheticCommsResponse,
     SyntheticPowerResponse,
+    SyntheticRadiationResponse,
     SyntheticStateResponse,
     SyntheticTelemetryPacket,
     SyntheticTelemetryPacketResponse,
@@ -129,6 +131,44 @@ class BackendAPI:
         if power_state:
             params["power_state"] = power_state
         return self._get("/telemetry/synthetic/power", params, SyntheticPowerResponse)
+
+    def get_synthetic_comms(
+        self,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        comm_state: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        order: str = "desc",
+        sort_by: str = "ingested_at",
+    ) -> SyntheticCommsResponse:
+        params = {"limit": limit, "offset": offset, "order": order, "sort_by": sort_by}
+        if date_from:
+            params["date_from"] = date_from.isoformat()
+        if date_to:
+            params["date_to"] = date_to.isoformat()
+        if comm_state:
+            params["comm_state"] = comm_state
+        return self._get("/telemetry/synthetic/comms", params, SyntheticCommsResponse)
+
+    def get_synthetic_radiation(
+        self,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        sep_event_active: bool | None = None,
+        limit: int = 100,
+        offset: int = 0,
+        order: str = "desc",
+        sort_by: str = "ingested_at",
+    ) -> SyntheticRadiationResponse:
+        params = {"limit": limit, "offset": offset, "order": order, "sort_by": sort_by}
+        if date_from:
+            params["date_from"] = date_from.isoformat()
+        if date_to:
+            params["date_to"] = date_to.isoformat()
+        if sep_event_active is not None:
+            params["sep_event_active"] = sep_event_active
+        return self._get("/telemetry/synthetic/radiation", params, SyntheticRadiationResponse)
 
     def get_synthetic_packet(
         self,
