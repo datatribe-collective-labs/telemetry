@@ -38,6 +38,10 @@ SOURCES: dict[str, tuple[Source, ...]] = {
     "health.temperature": ("synthetic",),
     "health.battery": ("synthetic",),
     "health.power": ("synthetic",),
+    "radiation.rate": ("synthetic",),
+    "radiation.total": ("synthetic",),
+    "radiation.chapters": ("synthetic",),
+    "radiation.storm": ("real",),
     "environment.answers": ("real",),
     "environment.particles": ("real",),
     "environment.contact_now": ("real",),
@@ -62,6 +66,14 @@ SUMMARIES: dict[str, str] = {
     "when Orion is in shadow (grey bands) and recharges in sunlight.",
     "health.power": "Power from the solar panels versus power the spacecraft uses. When the "
     "orange line is below the grey one, the battery makes up the difference.",
+    "radiation.rate": "How fast the dose builds up at one simulated cabin sensor, not the crew's "
+    "actual dose. Each step up the scale is 10 times more.",
+    "radiation.total": "The dose added up over the flight at one simulated cabin sensor, split by "
+    "source. It is not the crew's actual dose.",
+    "radiation.chapters": "Where the simulated dose came from, stage by stage. It is a dose at one "
+    "cabin sensor, not the crew's actual dose.",
+    "radiation.storm": "Real solar particle measurements from the flight. The what-if below them "
+    "is a simulation from the Artemis I paper, not an Artemis II event.",
     "environment.answers": "The two short answers for the whole flight, whatever time range is "
     "selected in the sidebar.",
     "environment.particles": "Energetic particles from the Sun, measured near Earth. Inside the "
@@ -174,6 +186,58 @@ is a fixed placeholder profile (1.2 kW) until a detailed load model exists.
 which affects how much sunlight the panels get and when shadow happens.
 
 **Why it matters:** This balance decides whether the battery fills up or runs down.
+""",
+    "radiation.rate": """
+**What:** The simulated absorbed dose rate in water at one cabin sensor location (HERA HSU2),
+in microgray per minute, over the whole trajectory.
+
+**How to read it:** The scale is logarithmic. The tall spikes are the radiation belts near
+Earth; the flat line is cosmic rays in deep space. The dark mark is the live or selected moment.
+
+**Known limitations:** The model is calibrated to Artemis I on peak rate and total dose, so
+its 287 µGy/min peak matching Artemis I is by construction, not independent evidence. Artemis I
+flew a different trajectory and attitude, the model has no real Artemis II attitude or
+near-Earth geomagnetic shielding, and no official Artemis II dose data was found.
+
+**Why it matters:** It shows that radiation on this trip comes in short bursts near Earth
+and a steady background everywhere else.
+""",
+    "radiation.total": """
+**What:** The simulated absorbed dose in water at one cabin sensor, added up over time and
+stacked by source: radiation belts and galactic cosmic rays, in milligray.
+
+**How to read it:** A steep rise is a belt crossing; the slow slope is cosmic rays. The total
+counts from the start of NASA's trajectory data, about 3.4 hours after liftoff, and stops
+where that data ends before splashdown, so the start and end of the flight are missing.
+
+**Why it matters:** Belts give a large dose quickly, and cosmic rays add up over days. This
+**is not the crew's actual dose**: dose varies by location in the spacecraft, and absorbed dose
+is not the same as biological risk.
+""",
+    "radiation.chapters": """
+**What:** The simulated dose in three stages of the flight, plus the two moments that shaped
+the story: the Moon flyby and the solar storm that didn't happen.
+
+**How to read it:** Leaving Earth runs to the first time Orion is beyond the belts, the long
+quiet lasts until it re-enters them, and coming home is the rest. The three doses add up to
+the total. The Moon figures come from the geometry of the flight.
+
+**Why it matters:** It explains where the dose came from, and why the Moon that cut the radio
+did little to block cosmic rays at this distance.
+[Artemis I radiation paper, Nature 634, 48-52 (2024), CC BY 4.0](https://doi.org/10.1038/s41586-024-07927-7)
+""",
+    "radiation.storm": """
+**What:** The highest ≥10 MeV solar proton flux during the flight (NOAA GOES, via NASA iSWA,
+a provisional real-time product), compared with NOAA's 10 pfu storm level.
+
+**How to read it:** The what-if uses numbers from the Artemis I paper: a **simulation** of the
+October 1989 solar particle event, with peak dose rates of 414 µGy/min at the crew cabin
+sensor and 95 µGy/min in the storm shelter. It describes the Artemis I spacecraft and never
+happened on Artemis II.
+
+**Why it matters:** A large solar storm is the main radiation danger beyond Earth's magnetic
+shield, and it is why Orion has a shelter.
+[Artemis I radiation paper, Nature 634, 48-52 (2024), CC BY 4.0](https://doi.org/10.1038/s41586-024-07927-7)
 """,
     "environment.answers": """
 **What:** Two answers about the whole flight. The first compares the highest flux of
