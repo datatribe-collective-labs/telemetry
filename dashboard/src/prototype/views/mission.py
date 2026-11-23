@@ -13,6 +13,13 @@ from dashboard.src.prototype.data.backend_api import BackendAPIError
 from dashboard.src.prototype.views import _data
 from dashboard.src.prototype.views._controls import time_window
 from dashboard.src.prototype.views._explain import data_badge, explain
+from dashboard.src.prototype.views._link import (
+    LinkGap,
+    duration_text,
+    gap_at,
+    link_gaps,
+    link_timeline,
+)
 from dashboard.src.prototype.views._live import REFRESH_INTERVAL, plot
 from dashboard.src.prototype.views._phases import (
     milestones,
@@ -21,9 +28,15 @@ from dashboard.src.prototype.views._phases import (
     timeline_strip,
 )
 from dashboard.src.prototype.views._status import (
+    EXPECTED_GAPS,
     POWER_STATUS,
     THERMAL_STATUS,
+    format_dose,
     is_ok,
+    link_is_expected,
+    link_needs_attention,
+    link_status,
+    radiation_zone,
     status,
 )
 from dashboard.src.prototype.views._trajectory import (
@@ -43,8 +56,7 @@ REAL_DATA_SPAN = "Apr 2, 02:00 – Apr 10, 23:00 UTC"
 
 st.title("Artemis II: where is Orion?")
 st.markdown(
-    f"{data_badge('real')} published by NASA/JPL · {data_badge('synthetic')} "
-    f"simulated by our digital twin · {data_badge('placeholder')} not simulated yet"
+    f"{data_badge('real')} published by NASA/JPL · {data_badge('synthetic')} simulated by our digital twin"
 )
 
 date_from, date_to, live = time_window()
@@ -79,14 +91,50 @@ def _replay_slider(date_from: datetime, date_to: datetime, playing: bool) -> dat
     return st.session_state[REPLAY_KEY].replace(tzinfo=UTC)
 
 
-def _health_strip(thermal, power) -> None:
-    """Plain-language status tiles from the latest thermal and power rows."""
+def _radio_tile(link, gap: LinkGap | None) -> None:
+    st.markdown("**Radio link**")
+    if link is None:
+        st.markdown("### :gray[No data]")
+        st.caption("No simulated radio link for this moment.")
+        return
+    label, color = link_status(link["comm_state"], link["link_loss_reason"])
+    st.markdown(f"### :{color}[{label}]")
+    if link["comm_state"] != "NO_LINK":
+        st.caption(f"{link['data_rate_kbps'] / 1000:.2f} Mbps · link margin {link['link_margin_db']:.0f} dB")
+    elif gap is not None:
+        st.caption(f"No link for {duration_text(link['timestamp_utc'] - gap.start)}")
+    else:
+        st.caption("No link")
+
+
+def _radiation_tile(radiation) -> None:
+    st.markdown("**Radiation**")
+    if radiation is None:
+        st.markdown("### :gray[No data]")
+        st.caption("No simulated radiation for this moment.")
+        return
+    label, color, sentence = radiation_zone(radiation["radiation_zone"])
+    st.markdown(f"### :{color}[{label}]")
+    st.caption(f"{format_dose(radiation['cumulative_dose_krad'])} so far. {sentence} "
+               "Simulated at one cabin sensor, not the crew's actual dose.")
+
+
+def _health_strip(thermal, power, link, radiation, gap: LinkGap | None) -> None:
+    """Plain-language status tiles from the latest row of each model."""
     thermal_label, thermal_color = status(THERMAL_STATUS, thermal["thermal_state"])
     power_label, power_color = status(POWER_STATUS, power["power_state"])
     attention = [label for label, state in ((thermal_label, thermal["thermal_state"]), (power_label, power["power_state"]))
                  if not is_ok(state)]
+    expected_gap = None
+    if link is not None:
+        if link_needs_attention(link["comm_state"], link["link_loss_reason"]):
+            attention.append(link_status(link["comm_state"], link["link_loss_reason"])[0])
+        elif link_is_expected(link["comm_state"], link["link_loss_reason"]):
+            expected_gap = f"Earth can't reach Orion right now: {EXPECTED_GAPS[link['link_loss_reason']]}. This gap is expected."
     if attention:
-        st.warning(f"**Needs attention:** {', '.join(attention)}.")
+        st.warning(f"**Needs attention:** {', '.join(attention)}." + (f" {expected_gap}" if expected_gap else ""))
+    elif expected_gap:
+        st.info(f"**All simulated systems are OK.** {expected_gap}")
     else:
         st.success("**All simulated systems are OK.**")
 
@@ -100,13 +148,9 @@ def _health_strip(thermal, power) -> None:
         st.markdown(f"### :{power_color}[{power_label}]")
         st.caption(f"Battery {power['battery_soc_pct']:.0f} % · solar panels {power['solar_array_power_w'] / 1000:.1f} kW")
     with c3:
-        st.markdown("**Radio link**")
-        st.markdown("### :gray[Not simulated yet]")
-        st.caption("Which antennas can reach Orion: see Space environment.")
+        _radio_tile(link, gap)
     with c4:
-        st.markdown("**Radiation**")
-        st.markdown("### :gray[Not simulated yet]")
-        st.caption("Real solar particle levels: see Space environment.")
+        _radiation_tile(radiation)
 
 
 def _staleness(tick: datetime) -> None:
@@ -129,14 +173,30 @@ def _optional(load, what: str):
         return None
 
 
+def _synthetic(table: str, date_from, date_to, live: bool):
+    """Live: up to the simulator's position. Replay: the stored mission, so any moment works."""
+    if live:
+        return getattr(_data, f"synthetic_{table}")(date_from, date_to)
+    return _data.stored_mission(table, date_from, date_to)
+
+
+def _latest(df, replay_at):
+    """The newest row at or before the moment shown, or None."""
+    rows = up_to(df, replay_at)
+    return None if rows.empty else rows.iloc[-1]
+
+
 @st.fragment(run_every=REFRESH_INTERVAL if live else (PLAY_INTERVAL if playing else None))
 def render(date_from, date_to, live, three_d, playing):
     replay_at = None if live else _replay_slider(date_from, date_to, playing)
     try:
-        syn = _data.synthetic_state(date_from, date_to)
+        syn = _synthetic("state", date_from, date_to, live)
         real = _data.real_orion(date_from, date_to)
-        thermal = _data.synthetic_thermal(date_from, date_to)
-        power = _data.synthetic_power(date_from, date_to)
+        thermal = _synthetic("thermal", date_from, date_to, live)
+        power = _synthetic("power", date_from, date_to, live)
+        comms = _synthetic("comms", date_from, date_to, live)
+        radiation = _synthetic("radiation", date_from, date_to, live)
+        stored_comms = _data.stored_mission("comms", date_from, date_to)
     except BackendAPIError as e:
         st.error(str(e))
         return
@@ -189,13 +249,23 @@ def render(date_from, date_to, live, three_d, playing):
     st.subheader("How is the spacecraft doing?")
     explain("mission.health")
     thermal, power = up_to(thermal, replay_at), up_to(power, replay_at)
+    # The stored mission, unless the first run hasn't been stored yet (it is cached for a minute).
+    whole_mission = stored_comms if len(stored_comms) >= len(comms) else comms
+    gaps = link_gaps(whole_mission)
     if thermal.empty or power.empty:
         st.info("No simulated telemetry in this time range. Start the physics model to see spacecraft health.")
     else:
         if not live:
             st.caption(f"Simulated state at {thermal['timestamp_utc'].iloc[-1]:%b %d, %H:%M} UTC, "
                        "the last simulated moment up to the replay time.")
-        _health_strip(thermal.iloc[-1], power.iloc[-1])
+        link = _latest(comms, replay_at)
+        gap = gap_at(gaps, link["timestamp_utc"]) if link is not None else None
+        _health_strip(thermal.iloc[-1], power.iloc[-1], link, _latest(radiation, replay_at), gap)
+
+    if not whole_mission.empty:
+        st.subheader("When could Earth hear Orion?")
+        explain("mission.link")
+        plot(link_timeline(gaps, whole_mission["timestamp_utc"].iloc[0], whole_mission["timestamp_utc"].iloc[-1], now_t))
 
 
 render(date_from, date_to, live, view == "3D", playing)

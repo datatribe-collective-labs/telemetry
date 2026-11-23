@@ -33,7 +33,8 @@ def data_badge(*sources: Source) -> str:
 SOURCES: dict[str, tuple[Source, ...]] = {
     "mission.map": ("real", "synthetic"),
     "mission.timeline": ("real",),
-    "mission.health": ("synthetic", "placeholder"),
+    "mission.health": ("synthetic",),
+    "mission.link": ("synthetic",),
     "health.temperature": ("synthetic",),
     "health.battery": ("synthetic",),
     "health.power": ("synthetic",),
@@ -49,8 +50,10 @@ SUMMARIES: dict[str, str] = {
     "simulation is right, orange sits on blue.",
     "mission.timeline": "The five stages of the 10-day trip, from NASA's flight plan. The orange "
     "line is the moment shown on this page; hover the diamonds for the engine burns.",
-    "mission.health": "A quick check of the spacecraft's systems. Grey means we don't simulate "
-    "that system yet.",
+    "mission.health": "A quick check of the spacecraft's simulated systems: temperature, power, "
+    "radio and radiation.",
+    "mission.link": "Green is when a ground antenna could hear the simulated Orion. Each gap is "
+    "colored by its reason, and the orange mark above the bar is the moment shown on this page.",
     "health.temperature": "The electronics must stay inside the green band. If they get too cold, "
     "a heater switches on (red bands).",
     "health.battery": "How full the battery is, like a phone's battery percentage. It drains "
@@ -99,16 +102,37 @@ means something different in Earth orbit than behind the Moon. The timeline was 
 a graphical PDF and has not been fact-checked yet, so treat times as approximate.
 """,
     "mission.health": """
-**What:** The latest state of each spacecraft system in plain words: temperature and power
-from our physics models, plus the radio link and radiation, which we don't simulate yet.
+**What:** The latest state of each spacecraft system in plain words, all from our physics
+models: temperature, power, the radio link to Earth, and radiation.
 
 **How to read it:** Green means OK; orange or red means a limit from the data contracts
-was crossed (for example battery below 20 %). Grey means "not simulated yet": those
-models are being built by other contributors. Real antenna and particle data is on the
-Space environment page.
+was crossed (for example battery below 20 %). A radio gap caused by where Orion is, out of
+view of the ground antennas or behind the Moon, is expected, so it gets a neutral message
+instead of a warning. Radiation zones describe where Orion is and are never a warning.
+
+The radiation dose is **simulated absorbed dose in water at one cabin sensor, not the
+crew's actual dose**. It is calibrated to Artemis I measurements, and it starts when NASA's
+trajectory data starts (Apr 2, 02:00 UTC), so it leaves out the first hours of the flight.
 
 **Why it matters:** Like a car's dashboard warning lights: one look tells you whether
 anything needs attention, and the Spacecraft health page shows why.
+""",
+    "mission.link": """
+**What:** The simulated radio link between Orion and NASA's Deep Space Network (DSN) over
+the whole mission. Green means connected. A gap means no downlink, for one of these reasons:
+out of view of all three DSN sites, blocked by the Moon, no power for the radio, or a
+signal too weak to use.
+
+**How to read it:** Hover a gap for its reason, times and length. The simulator checks
+visibility every minute, while the coverage chart on Space environment uses hourly real
+data, so short gaps can look different there. The simulated Moon blackout (22:43 to 23:23
+UTC on Apr 6) is 1 to 2 minutes earlier than NASA's planned window.
+
+**Known limitations:** The model uses the DSN only. The real Orion also used the Near Space
+Network close to Earth, so the early simulated gaps overstate its real loss of contact.
+
+**Why it matters:** Gaps are normal in spaceflight. Knowing why one happens separates an
+expected loss of signal from a real problem.
 """,
     "health.temperature": """
 **What:** The temperature of the electronics bay, where Orion's computers and batteries

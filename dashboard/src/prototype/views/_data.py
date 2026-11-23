@@ -77,6 +77,15 @@ def _history(table: str, date_from: datetime, date_to: datetime | None) -> pd.Da
     return to_frame(items, "timestamp_utc")
 
 
+def stored_mission(table: str, date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
+    """Every stored tick, including ones past the simulator's current position.
+
+    For replay and whole-mission views. Live views use the `synthetic_*` loaders, which
+    stop at the newest tick.
+    """
+    return _history(table, date_from, date_to)
+
+
 def _synthetic(table: str, date_from: datetime, date_to: datetime | None) -> pd.DataFrame:
     fetch_page = _endpoint(table)
     history = _history(table, date_from, date_to)  # before the tail, so the tail is newer
