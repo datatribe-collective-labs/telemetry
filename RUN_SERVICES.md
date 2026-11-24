@@ -66,12 +66,15 @@ container isn't started. Without the file, nothing changes: the defaults are the
 
 **Ops dashboard** (Grafana, #46): `docker-compose.grafana.yml` is another opt-in file: one
 read-only "Telemetry ops" dashboard (status row, mission data checks, data freshness, Airflow
-runs, row counts), provisioned
+runs, row counts) and email alerts, provisioned
 from `infra/grafana/`, on `127.0.0.1:3000`. It needs `GRAFANA_ADMIN_PASSWORD`,
 `GRAFANA_DB_USER` and `GRAFANA_DB_PASSWORD` (a read-only user on the server; on a laptop the
-`POSTGRES_*` user is fine):
+`POSTGRES_*` user is fine), and `GRAFANA_SMTP_USER`, `GRAFANA_SMTP_PASSWORD` and
+`GRAFANA_ALERT_EMAIL` for the alerts (set up in `docs/guides/UPCLOUD_DEPLOYMENT.md`; on a
+laptop any value will do, sending then just fails in the log):
 ```bash
 GRAFANA_ADMIN_PASSWORD=admin GRAFANA_DB_USER=$POSTGRES_USER GRAFANA_DB_PASSWORD=$POSTGRES_PASSWORD \
+GRAFANA_SMTP_USER=none GRAFANA_SMTP_PASSWORD=none GRAFANA_ALERT_EMAIL=none@example.invalid \
   docker compose -f docker-compose.yml -f docker-compose.grafana.yml up -d grafana
 ```
 
