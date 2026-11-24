@@ -326,10 +326,16 @@ has room.
 
 ## Ops dashboard (Grafana)
 
-One read-only dashboard, "Telemetry ops" (`infra/grafana/`): how many seconds ago each
-synthetic table was written, when each real-data table was last ingested (daily ones
-over 36 h = a failed refresh), rows written per minute, the latest Airflow runs, row
-counts and database size. No alerts (they'd need an SMTP account: UpCloud blocks port 25).
+One read-only dashboard, "Telemetry ops" (`infra/grafana/`). The status row answers "is
+everything OK?": **Pipeline** (all 8 tick tables written in the last 2-5 min, about 60
+writes a minute), **Real data** (daily sources under 26/36 h, backfill tables not empty),
+**Airflow** (the last `real_data_refresh` succeeded under 26/36 h ago), **Replay position**
+and **Database use** (of the 10 GiB plan). Each tile's description says what to check
+first. Below: **Mission checks** on the stored synthetic data (red = broken data; orange =
+the model output changed, so a physics model PR updates the expected no-link count and
+final dose there), the real-data tables, writes per minute and the latest Airflow runs;
+raw counts and sizes under Details. No alerts yet (#46: they need an SMTP account, since
+UpCloud blocks port 25).
 Private like the Airflow UI; about 220 MB of memory. Set up once, on the server:
 
 ```bash
