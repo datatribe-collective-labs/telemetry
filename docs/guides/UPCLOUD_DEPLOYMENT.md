@@ -308,7 +308,7 @@ All commands from `~/telemetry` as `deploy`.
 | Logs | `docker compose logs -f --tail 100 <service>` (rotated: 3 × 10 MB) |
 | Restart a service | `docker compose restart <service>` |
 | Stop / start everything | `docker compose stop` / `docker compose up -d` |
-| Update to the latest `main` | `git pull && docker compose up -d --build --wait && docker image prune -f && docker builder prune -f` |
+| Update to the latest `main` | `git pull && docker compose up -d --build --wait && docker image prune -f && docker builder prune -f` (silence the alerts first if it restarts the simulator: "Planned restarts" below) |
 | Roll back | `git checkout <commit>`, then the same `up` command (later `git switch main`) |
 | Airflow UI | On your computer: `ssh -L 8080:localhost:8080 deploy@<server-ip>`, then http://localhost:8080 (user `admin`, `AIRFLOW_ADMIN_PASSWORD`) |
 | New Airflow admin password | Change it in `.env`, then `docker compose up -d --force-recreate airflow-init` |
@@ -320,9 +320,10 @@ All commands from `~/telemetry` as `deploy`.
 (`caddy_data`; re-issuing them repeatedly hits Let's Encrypt's rate limits) and, without
 the managed database, the database itself. `docker compose down` without `-v` is safe.
 
-**Weekly check:** in the Airflow UI, the daily `real_data_refresh` runs are green
-(a failing source doesn't alert anyone, its data just goes stale), and `df -h /`
-has room.
+**Weekly check:** the Grafana status row is green and the mission checks are OK, the
+healthchecks.io check is green, and the alert inbox has nothing unanswered. Failures
+are emailed (see "When an alert arrives"), so this is only a look for what alerts don't
+cover: an alert email stuck in spam, a source that answers but with fewer rows.
 
 ## Ops dashboard (Grafana)
 
@@ -444,6 +445,62 @@ Set up once:
 A deploy needs nothing extra: `git pull` updates the script, and recreated containers
 start a new restart count. To pause it, comment out the cron line, or pause the check on
 healthchecks.io (it then also stops alerting on missing pings).
+
+## When an alert arrives
+
+All alerts go to the alert inbox (the dedicated Gmail account). Two senders:
+
+| Email | From | What to do |
+|---|---|---|
+| `[FIRING:n] Telemetry (...)` | Grafana ("Telemetry ops") | The data path: find the alert in "Email alerts" above. Each email has its first check and links to the dashboard panel (open the Grafana SSH tunnel first) |
+| `[RESOLVED] Telemetry` | Grafana | The problem is gone; nothing to do |
+| `DOWN \| <check name>` | healthchecks.io | The server. "received a failure signal": the email's **Last Ping Body** lists the problem lines (e.g. `physics_models_consumer is exited`), see "Host check" above. "success signal did not arrive on time, grace time passed": no ping at all for 15 minutes (the Last Ping Body is then an old `ok: ...`), so the server, its network or cron is down; look in the UpCloud console |
+| `UP \| <check name>` | healthchecks.io | Recovered |
+
+Then, in order: `docker compose ps` (what is down?), the service's log, the Grafana status
+row (what does the data say?). Bring one stopped service back with
+`docker compose up -d --no-deps <service>`, or restart a running one with
+`docker compose restart <service>`. **Not `docker compose start <service>`**: it also
+starts the one-shot jobs the service depends on (`migrate`) from their old containers,
+which can be older than the database (drill 1 below). A reminder follows every 4 h while
+a Grafana alert lasts; healthchecks.io emails once per change.
+
+**"Values" in a Grafana email** are the rule's two steps. **A** is the query's result, the
+same number as the dashboard tile: the status code for Pipeline and Airflow (0 = OK,
+1 = Slow/Late, 2 = Stopped/Failed), the % used for "Database almost full". **C** is the
+condition: 1 = firing, 0 = not. So `A=2 C=1` on "Pipeline stopped" means Stopped and
+firing, and `A=0 C=0` in a resolved email means back to OK. "Missing ticks" fires on A = 1
+only: when the pipeline stops completely (A = 2), "Pipeline stopped" takes over.
+
+The synthetic data survives a consumer outage of up to an hour: Redpanda keeps the
+simulator's messages for 1 h, and the restarted consumer writes them all.
+
+### Planned restarts
+
+A deploy that restarts `physics_models` or `physics_models_consumer`, or the database's
+maintenance, pauses the synthetic data. Grafana waits 5-10 minutes before alerting, so a
+quick restart sends nothing. For anything longer, silence it first: Grafana -> Alerting ->
+Silences -> New silence, label `grafana_folder` = `Telemetry`, duration 1h (end it early
+when done). If a host check run lands in the middle of a rebuild, it reports the container
+being recreated as stopped; the next run, 5 minutes later, sends "up" again. To avoid even
+that, pause the check on healthchecks.io during the deploy and resume it after.
+
+After a deploy, drop superseded rollback image tags and `docker builder prune -f`, so the
+disk doesn't refill (it reached 83% before the first cleanup). A deploy that rebuilds the
+backend image should also recreate `migrate` (`docker compose up -d --no-deps migrate`;
+at the latest revision it does nothing and exits 0), so the job isn't left on an old image.
+
+### Drills
+
+Run on the live server, 2026-11-24 (#112):
+
+| Drill | What happened | Result |
+|---|---|---|
+| 1. `physics_models_consumer` stopped 10:53-11:07 UTC (about 13.5 min) | 10:55 host check `/fail` ("physics_models_consumer is exited"), healthchecks.io `DOWN` email at once; 10:58 Grafana "Pipeline stopped" pending, 11:04 firing, email; consumer back 11:07; 11:07 Grafana inactive, `[RESOLVED]`; 11:10 host check ok, `UP` email | All emails as designed. Mission checks after: 12,834 ticks, 0 gaps (the consumer caught up from Redpanda). Found: `docker compose start` also ran a `migrate` container from 2026-11-16 that failed (exit 255, the host check reported it); fixed by recreating it, and the runbook now says `up -d --no-deps` |
+| 2. Host check cron paused 11:10-11:28 UTC (stand-in for "server down") | Last ping 11:10:01; 11:25:02 healthchecks.io `DOWN` ("success signal did not arrive on time, grace time passed"), exactly period + grace later; cron line back 11:28; 11:30 ping, `UP` email | As designed: a silent server is reported within 15 minutes, worded differently from a reported problem |
+
+Not drilled live (tested locally, would need real damage here): refresh failed, database
+almost full, disk, out of memory, unhealthy container, public site down.
 
 ## Troubleshooting
 
