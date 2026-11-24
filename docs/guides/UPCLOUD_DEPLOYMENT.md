@@ -404,6 +404,47 @@ Changing the Gmail account's password revokes the app password: create a new one
 update `.env`. Before a planned restart of the simulator or the database, a silence
 (Alerting -> Silences) keeps the alerts quiet.
 
+## Host check (healthchecks.io)
+
+Grafana only sees the database, so it can't report the server being down, a full disk or
+a hung backend (the site still answers, the data still flows). `infra/hostcheck/hostcheck.py`
+(#110) covers those: cron runs it every 5 minutes, and it pings
+[healthchecks.io](https://healthchecks.io), which emails when a ping says something is
+wrong, or when no ping arrives at all (server, network or cron down).
+
+| Problem line | Means | First check |
+|---|---|---|
+| `disk N% used` | `/` over 85% full | `docker system df`, then prune old images and the build cache |
+| `<service> is exited` | a long-running service stopped | `docker compose ps`, `docker compose logs --tail 50 <service>` |
+| `<service> is unhealthy` | it runs but fails its healthcheck (a hung backend, say); Docker doesn't restart it | its log, then `docker compose restart <service>` |
+| `<service> restarted Nx` | crashed and was restarted since the last check | its log; repeated: a crash loop |
+| `<service> was killed: out of memory` | hit its memory limit | `docker stats`; the limits are in `docker-compose.prod.yml` |
+| `migrate exited with code N` | a one-shot job failed (after a deploy) | `docker compose logs migrate` |
+| `public site ...` | Caddy, the certificate or the dashboard doesn't answer | `docker compose logs caddy dashboard` |
+| `docker check failed` | Docker itself doesn't answer | `sudo systemctl status docker` |
+| no ping (healthchecks.io says "down") | the server, its network or cron is down | the UpCloud console |
+
+It only checks the `telemetry` compose project, never prints `.env` values and writes one
+line per run to the system log (`journalctl -t hostcheck`). A check from outside (a
+firewall mistake that blocks visitors while the server works) is not covered.
+
+Set up once:
+
+1. On healthchecks.io (sign up with the alert Gmail account): add a check with
+   **Period 5 minutes** and **Grace 10 minutes**, and copy its ping URL to the password
+   manager.
+2. Add it at the end of `.env` with `nano`: `HOSTCHECK_PING_URL=https://hc-ping.com/<uuid>`
+3. Run it once by hand; it prints `ok: ...` or the problems, and the check turns green:
+   `python3 ~/telemetry/infra/hostcheck/hostcheck.py`
+4. Add the cron line (`crontab -e`):
+   ```
+   */5 * * * * /usr/bin/python3 $HOME/telemetry/infra/hostcheck/hostcheck.py >/dev/null 2>&1
+   ```
+
+A deploy needs nothing extra: `git pull` updates the script, and recreated containers
+start a new restart count. To pause it, comment out the cron line, or pause the check on
+healthchecks.io (it then also stops alerting on missing pings).
+
 ## Troubleshooting
 
 | Symptom | Look at |
@@ -461,7 +502,9 @@ Both are billed until deleted (a stopped Starter server too).
 1. Optional: a last database copy ("A manual copy" above), downloaded to your computer.
 2. **Database:** in its settings turn **termination protection off**, then delete it.
 3. **Server:** delete it **with its storage**.
-4. **Alert email:** delete the sending Gmail account (or at least revoke its app password).
+4. **Alert email and host check:** remove the cron line (`crontab -r`), delete the
+   healthchecks.io check (else it reports the deleted server as down), then the sending
+   Gmail account (or at least revoke its app password).
 5. Remove the server's, the database's and the Gmail account's entries from the password
    manager.
 

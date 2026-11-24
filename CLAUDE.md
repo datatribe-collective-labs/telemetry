@@ -207,8 +207,12 @@ CSV header above `$$SOE`, not inside the data block.
   an external PostgreSQL (UpCloud Managed PostgreSQL, #46) and leaves the `timescaledb`
   container out; the base file's `depends_on` entries on it are `required: false` for that.
   `docker-compose.grafana.yml` (another opt-in file) adds a read-only Grafana "Telemetry ops"
-  dashboard provisioned from `infra/grafana/` (127.0.0.1:3000, no alerts). Opt-in files
+  dashboard and email alerts provisioned from `infra/grafana/` (127.0.0.1:3000; each alert
+  rule runs a dashboard tile's SQL unchanged, a unit test enforces it). Opt-in files
   rather than profiles: compose checks `:?` variables even for a disabled service.
+  Outside Docker, `infra/hostcheck/hostcheck.py` (stdlib only, the deploy user's crontab)
+  checks disk, container health and the public site and pings healthchecks.io; it never
+  sources `.env` (a malformed line would echo secrets).
   The `tests`/`orion-tests`/`airflow-tests` services are in the `test` profile (`orion-tests`
   extends `tests` - same read-only image, plus the database - and runs `make test-orion`); the DAG
   tests need Airflow, which doesn't run on native Windows, so they skip natively and run
