@@ -1,0 +1,216 @@
+# Grafana alerting (#108): email when the demo breaks. Provisioned at startup, read-only in the UI.
+#
+# Each rule runs a status-tile query of the "Telemetry ops" dashboard unchanged (a unit test keeps
+# them identical, so an email and the dashboard always agree). "No data" and query errors fire the
+# rule too: the database being unreachable is a failure. The pending period ("for") rides out short
+# blips such as the managed database's maintenance (Sun 05:00 UTC) and a deploy restart.
+#
+# Grafana replaces environment variables (a dollar sign + name) in this file, so the SQL
+# must not contain a dollar sign.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: Alert email
+    receivers:
+      - uid: alert-email
+        type: email
+        settings:
+          addresses: $GF_ALERT_EMAIL   # GRAFANA_ALERT_EMAIL in .env
+          singleEmail: true
+        disableResolveMessage: false
+
+policies:
+  - orgId: 1
+    receiver: Alert email
+    group_by: ["grafana_folder"]   # problems that start together arrive in one email
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h            # reminder while a problem lasts
+
+groups:
+  - orgId: 1
+    name: telemetry
+    folder: Telemetry
+    interval: 1m
+    rules:
+      - uid: pipeline-stopped
+        title: Pipeline stopped
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: telemetry-db
+            model:
+              refId: A
+              editorMode: code
+              format: table
+              rawQuery: true
+              # = the "Pipeline" tile's query
+              rawSql: |-
+                -- 2 = a tick table not written for 5 min; 1 = newest write 2-5 min old, or < 500 writes in 10 min (60/min expected)
+                WITH t AS (
+                  SELECT max(ingested_at) AS last, count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') AS w10 FROM state_snapshot
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM thermal_output
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM power_output
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM comms_output
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM radiation_output
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM cross_model_state
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM telemetry_packet
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM ml_feature_vectors
+                )
+                SELECT CASE
+                  WHEN bool_or(last IS NULL OR last < now() - interval '5 minutes') THEN 2
+                  WHEN bool_or(last < now() - interval '2 minutes' OR w10 < 500) THEN 1
+                  ELSE 0 END AS status
+                FROM t
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [1.5] }
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: "Synthetic data stopped: a tick table has not been written for 5 minutes, or the database can't be reached."
+          description: "First check: On the server: `docker compose ps`, then `docker compose logs --tail 50 physics_models physics_models_consumer`. If the database is unreachable, check the managed database in the UpCloud console."
+          __dashboardUid__: telemetry-ops
+          __panelId__: "1"
+        labels:
+          tile: "Pipeline"
+        isPaused: false
+      - uid: missing-ticks
+        title: Missing ticks
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: telemetry-db
+            model:
+              refId: A
+              editorMode: code
+              format: table
+              rawQuery: true
+              # = the "Pipeline" tile's query
+              rawSql: |-
+                -- 2 = a tick table not written for 5 min; 1 = newest write 2-5 min old, or < 500 writes in 10 min (60/min expected)
+                WITH t AS (
+                  SELECT max(ingested_at) AS last, count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') AS w10 FROM state_snapshot
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM thermal_output
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM power_output
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM comms_output
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM radiation_output
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM cross_model_state
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM telemetry_packet
+                  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM ml_feature_vectors
+                )
+                SELECT CASE
+                  WHEN bool_or(last IS NULL OR last < now() - interval '5 minutes') THEN 2
+                  WHEN bool_or(last < now() - interval '2 minutes' OR w10 < 500) THEN 1
+                  ELSE 0 END AS status
+                FROM t
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: within_range, params: [0.5, 1.5] }
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 10m
+        annotations:
+          summary: "Synthetic data is slow: under 50 writes a minute, or writes 2-5 minutes late, for 10 minutes."
+          description: "First check: `docker compose logs --tail 100 physics_models_consumer` for rejected ticks or insert errors; the 'Synthetic writes per minute' panel shows which table falls behind."
+          __dashboardUid__: telemetry-ops
+          __panelId__: "1"
+        labels:
+          tile: "Pipeline"
+        isPaused: false
+      - uid: refresh-failed
+        title: Real-data refresh failed
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: airflow-db
+            model:
+              refId: A
+              editorMode: code
+              format: table
+              rawQuery: true
+              # = the "Airflow" tile's query
+              rawSql: |-
+                -- 2 = latest real_data_refresh failed, or no success in 36 h; 1 = last success 26-36 h ago, or the latest backfill failed
+                WITH latest AS (
+                  SELECT DISTINCT ON (dag_id) dag_id, state FROM dag_run ORDER BY dag_id, start_date DESC NULLS LAST
+                ), ok AS (
+                  SELECT max(end_date) AS t FROM dag_run WHERE dag_id = 'real_data_refresh' AND state = 'success'
+                )
+                SELECT CASE
+                  WHEN (SELECT state FROM latest WHERE dag_id = 'real_data_refresh') = 'failed' THEN 2
+                  WHEN (SELECT t FROM ok) IS NULL OR (SELECT t FROM ok) < now() - interval '36 hours' THEN 2
+                  WHEN (SELECT t FROM ok) < now() - interval '26 hours'
+                    OR (SELECT state FROM latest WHERE dag_id = 'real_data_backfill') = 'failed' THEN 1
+                  ELSE 0 END AS status
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [1.5] }
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 5m
+        annotations:
+          summary: "The latest real_data_refresh failed, or none has succeeded in 36 hours."
+          description: "First check: The failed task's log in the Airflow UI (`ssh -L 8080:localhost:8080 deploy@<server-ip>`, then http://localhost:8080); a NASA/JPL source being down usually clears on the next daily run."
+          __dashboardUid__: telemetry-ops
+          __panelId__: "3"
+        labels:
+          tile: "Airflow"
+        isPaused: false
+      - uid: database-almost-full
+        title: Database almost full
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: telemetry-db
+            model:
+              refId: A
+              editorMode: code
+              format: table
+              rawQuery: true
+              # = the "Database use" tile's query
+              rawSql: |-
+                -- Every database this user can open, against the managed plan's 10 GiB (database files only, not WAL)
+                SELECT sum(pg_database_size(datname))::float8 / (10 * 1024^3) * 100 AS "used"
+                FROM pg_database
+                WHERE datallowconn AND NOT datistemplate AND has_database_privilege(datname, 'CONNECT')
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [80] }
+        noDataState: Alerting
+        execErrState: Alerting
+        for: 30m
+        annotations:
+          summary: "The databases use over 80% of the managed plan's 10 GiB."
+          description: "First check: 'Rows per table' and 'Database size' under Details: which table grew? The UpCloud console shows the full disk use; the plan can be resized there."
+          __dashboardUid__: telemetry-ops
+          __panelId__: "5"
+        labels:
+          tile: "Database use"
+        isPaused: false

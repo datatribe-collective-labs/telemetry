@@ -1,12 +1,13 @@
-# docker-compose.grafana.yml - read-only ops dashboard (#46): is the demo's data fresh?
+# docker-compose.grafana.yml - read-only ops dashboard and email alerts (#46): is the demo OK?
 #
-# Opt-in extra file, provisioned from infra/grafana/ (datasources + one dashboard, no
-# alerts). Its own file, not a profile: compose checks the `:?` variables below even for
+# Opt-in extra file, provisioned from infra/grafana/ (datasources, one dashboard, alert
+# rules). Its own file, not a profile: compose checks the `:?` variables below even for
 # a disabled service, which would break every setup that doesn't use Grafana.
 #
 #   Server:  add it to COMPOSE_FILE in .env (see docs/guides/UPCLOUD_DEPLOYMENT.md), then
 #            UI over `ssh -L 3000:localhost:3000 deploy@<server-ip>`: http://localhost:3000
 #   Laptop:  GRAFANA_ADMIN_PASSWORD=admin GRAFANA_DB_USER=<POSTGRES_USER> GRAFANA_DB_PASSWORD=<POSTGRES_PASSWORD> \
+#            GRAFANA_SMTP_USER=none GRAFANA_SMTP_PASSWORD=none GRAFANA_ALERT_EMAIL=none@example.invalid \
 #              docker compose -f docker-compose.yml -f docker-compose.grafana.yml up -d grafana
 #
 # GRAFANA_DB_USER should be a read-only database user: Grafana's query editor can run any
@@ -32,6 +33,20 @@ services:
       GF_DB_NAME: ${POSTGRES_DB:?set POSTGRES_DB in .env}
       GF_DB_USER: ${GRAFANA_DB_USER:?set GRAFANA_DB_USER in .env (a read-only database user)}
       GF_DB_PASSWORD: ${GRAFANA_DB_PASSWORD:?set GRAFANA_DB_PASSWORD in .env}
+      # Email alerts (#108, rules in infra/grafana/provisioning/alerting/): a dedicated Gmail
+      # account sends over port 587 with an app password (UpCloud blocks port 25). Required, so
+      # a server can't run with alerts silently going nowhere; on a laptop any value will do
+      # (sending then fails in the log). GRAFANA_SMTP_HOST only changes for a local mail catcher.
+      GF_SMTP_ENABLED: "true"
+      GF_SMTP_HOST: ${GRAFANA_SMTP_HOST:-smtp.gmail.com:587}
+      GF_SMTP_STARTTLS_POLICY: MandatoryStartTLS   # never send the app password unencrypted
+      GF_SMTP_USER: ${GRAFANA_SMTP_USER:?set GRAFANA_SMTP_USER in .env (the sending Gmail address)}
+      GF_SMTP_PASSWORD: ${GRAFANA_SMTP_PASSWORD:?set GRAFANA_SMTP_PASSWORD in .env (its app password)}
+      GF_SMTP_FROM_ADDRESS: ${GRAFANA_SMTP_USER}
+      GF_SMTP_FROM_NAME: Telemetry ops
+      GF_ALERT_EMAIL: ${GRAFANA_ALERT_EMAIL:?set GRAFANA_ALERT_EMAIL in .env (who gets the alerts)}
+      # Links in alert emails open through the SSH tunnel
+      GF_SERVER_ROOT_URL: http://localhost:3000
     ports:
       - "127.0.0.1:3000:3000"   # localhost only: SSH tunnel on the server
     volumes:

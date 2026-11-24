@@ -334,8 +334,7 @@ and **Database use** (of the 10 GiB plan). Each tile's description says what to 
 first. Below: **Mission checks** on the stored synthetic data (red = broken data; orange =
 the model output changed, so a physics model PR updates the expected no-link count and
 final dose there), the real-data tables, writes per minute and the latest Airflow runs;
-raw counts and sizes under Details. No alerts yet (#46: they need an SMTP account, since
-UpCloud blocks port 25).
+raw counts and sizes under Details. Email alerts are below.
 Private like the Airflow UI; about 220 MB of memory. Set up once, on the server:
 
 ```bash
@@ -367,6 +366,43 @@ done
 Then add `:docker-compose.grafana.yml` to the end of `COMPOSE_FILE` in `.env`, run
 `docker compose up -d --wait`, and copy `GRAFANA_ADMIN_PASSWORD` into the password
 manager. `ALTER DEFAULT PRIVILEGES` covers tables created later (by `upadmin`).
+
+### Email alerts
+
+Grafana emails when the demo breaks (`infra/grafana/provisioning/alerting/`, #108). Each rule
+runs a status tile's query, so an email and the dashboard always agree:
+
+| Alert | Fires when | After | First check |
+|---|---|---|---|
+| Pipeline stopped | Pipeline tile = Stopped | 5 min | `docker compose ps`, then the `physics_models` and `physics_models_consumer` logs |
+| Missing ticks | Pipeline tile = Slow | 10 min | the consumer log for rejected ticks; "Synthetic writes per minute" |
+| Real-data refresh failed | Airflow tile = Failed | 5 min | the failed task's log in the Airflow UI |
+| Database almost full | Database use over 80% | 30 min | "Rows per table" and "Database size" under Details |
+
+A query error or no data fires the rule too (the database is unreachable); the waiting
+period rides out the database's Sunday maintenance and a deploy restart. A reminder
+follows every 4 h while a problem lasts, and a "resolved" email when it's fixed. Server
+down, disk and container health are not covered here.
+
+The sender is a dedicated Gmail account (not a personal one: an app password opens the
+whole mailbox), over port 587 because UpCloud blocks 25. Set up once:
+
+1. Create the Gmail account (recovery email: your own), turn on 2-Step Verification, then
+   create an app password at <https://myaccount.google.com/apppasswords> (Security ->
+   2-Step Verification -> App passwords). Save it in the password manager.
+2. Add three lines at the end of `.env`, with `nano` (no quotes, brackets or spaces; the app
+   password is 16 letters, without the spaces Google shows):
+   ```
+   GRAFANA_SMTP_USER=<the sending Gmail address>
+   GRAFANA_SMTP_PASSWORD=<the app password>
+   GRAFANA_ALERT_EMAIL=<who gets the alerts>
+   ```
+3. `docker compose up -d --force-recreate grafana`, then send a test email: Grafana ->
+   Alerting -> Contact points -> "Alert email" -> Test.
+
+Changing the Gmail account's password revokes the app password: create a new one and
+update `.env`. Before a planned restart of the simulator or the database, a silence
+(Alerting -> Silences) keeps the alerts quiet.
 
 ## Troubleshooting
 
@@ -425,7 +461,9 @@ Both are billed until deleted (a stopped Starter server too).
 1. Optional: a last database copy ("A manual copy" above), downloaded to your computer.
 2. **Database:** in its settings turn **termination protection off**, then delete it.
 3. **Server:** delete it **with its storage**.
-4. Remove the server's and the database's entries from the password manager.
+4. **Alert email:** delete the sending Gmail account (or at least revoke its app password).
+5. Remove the server's, the database's and the Gmail account's entries from the password
+   manager.
 
 ## Costs
 
