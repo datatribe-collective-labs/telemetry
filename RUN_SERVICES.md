@@ -65,7 +65,8 @@ container isn't started. Without the file, nothing changes: the defaults are the
 (`timescaledb:5432`, `sslmode=prefer`).
 
 **Ops dashboard** (Grafana, #46): `docker-compose.grafana.yml` is another opt-in file: one
-read-only "Telemetry ops" dashboard (data freshness, Airflow runs, row counts), provisioned
+read-only "Telemetry ops" dashboard (status row, mission data checks, data freshness, Airflow
+runs, row counts), provisioned
 from `infra/grafana/`, on `127.0.0.1:3000`. It needs `GRAFANA_ADMIN_PASSWORD`,
 `GRAFANA_DB_USER` and `GRAFANA_DB_PASSWORD` (a read-only user on the server; on a laptop the
 `POSTGRES_*` user is fine):

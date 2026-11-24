@@ -1,49 +1,97 @@
 {
   "uid": "telemetry-ops",
   "title": "Telemetry ops",
-  "description": "Is the demo's data fresh? Synthetic data (simulator -> Redpanda -> consumer), real data (Airflow ingest jobs), and the database. Read-only; provisioned from infra/grafana/dashboards.",
-  "tags": ["telemetry", "ops"],
+  "description": "Is the demo healthy? Status row first; mission checks, real data, writes per minute and Airflow runs below; raw counts under Details. Read-only; provisioned from infra/grafana/dashboards.",
+  "tags": [
+    "telemetry",
+    "ops"
+  ],
   "timezone": "utc",
   "editable": false,
   "graphTooltip": 1,
   "refresh": "1m",
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "schemaVersion": 39,
   "panels": [
     {
       "id": 1,
-      "type": "bargauge",
-      "title": "Synthetic data: seconds since last write",
-      "description": "Per table, how long ago the consumer last wrote a row (ingested_at). The simulator publishes about once a second, so anything over a few minutes means the simulator, Redpanda or the consumer has stopped. Empty = never written (placeholder model).",
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 0 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+      "type": "stat",
+      "title": "Pipeline",
+      "description": "Synthetic data path (simulator -> Redpanda -> consumer -> database), from the 8 tables written every tick. Red: a table not written for 5 min. Orange: newest write 2-5 min old, or under 50 writes/min over the last 10 min (also for ~8 min after a simulator restart). First check: `docker compose ps`, then `docker compose logs --tail 50 physics_models physics_models_consumer`.",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "telemetry-db"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "telemetry-db"
+          },
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT t AS \"table\", EXTRACT(EPOCH FROM now() - last)::int AS \"seconds ago\"\nFROM (\n  SELECT 'state_snapshot' AS t, max(ingested_at) AS last FROM state_snapshot\n  UNION ALL SELECT 'thermal_output', max(ingested_at) FROM thermal_output\n  UNION ALL SELECT 'power_output', max(ingested_at) FROM power_output\n  UNION ALL SELECT 'comms_output', max(ingested_at) FROM comms_output\n  UNION ALL SELECT 'radiation_output', max(ingested_at) FROM radiation_output\n  UNION ALL SELECT 'cross_model_state', max(ingested_at) FROM cross_model_state\n  UNION ALL SELECT 'telemetry_packet', max(ingested_at) FROM telemetry_packet\n  UNION ALL SELECT 'ml_feature_vectors', max(ingested_at) FROM ml_feature_vectors\n  UNION ALL SELECT 'anomaly_events', max(ingested_at) FROM anomaly_events\n) s\nORDER BY 1"
+          "rawSql": "-- 2 = a tick table not written for 5 min; 1 = newest write 2-5 min old, or < 500 writes in 10 min (60/min expected)\nWITH t AS (\n  SELECT max(ingested_at) AS last, count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') AS w10 FROM state_snapshot\n  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM thermal_output\n  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM power_output\n  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM comms_output\n  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM radiation_output\n  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM cross_model_state\n  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM telemetry_packet\n  UNION ALL SELECT max(ingested_at), count(*) FILTER (WHERE ingested_at > now() - interval '10 minutes') FROM ml_feature_vectors\n)\nSELECT CASE\n  WHEN bool_or(last IS NULL OR last < now() - interval '5 minutes') THEN 2\n  WHEN bool_or(last < now() - interval '2 minutes' OR w10 < 500) THEN 1\n  ELSE 0 END AS status\nFROM t"
         }
       ],
       "options": {
-        "orientation": "horizontal",
-        "displayMode": "basic",
-        "showUnfilled": true,
-        "reduceOptions": { "values": true, "calcs": [], "fields": "/seconds ago/" }
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^status$/"
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "s",
-          "min": 0,
-          "max": 600,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Slow",
+                  "color": "orange",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Stopped",
+                  "color": "red",
+                  "index": 2
+                }
+              }
+            }
+          ],
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "orange", "value": 120 },
-              { "color": "red", "value": 300 }
+              {
+                "color": "text",
+                "value": null
+              }
             ]
           }
         },
@@ -52,103 +100,361 @@
     },
     {
       "id": 2,
-      "type": "table",
-      "title": "Real data: last ingested",
-      "description": "When each ingest job last wrote its table. The daily refresh (DONKI, GOES protons, JPL CAD) runs at 00:00 UTC, so over 36 h means it failed: see the Airflow UI. Backfill tables change only when the real_data_backfill DAG is run by hand.",
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 0 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+      "type": "stat",
+      "title": "Real data",
+      "description": "Daily sources (JPL CAD, DONKI, GOES) by write time: orange over 26 h, red over 36 h. Backfill tables (Horizons, OEM, timeline) only need rows: red if one is empty. First check: the Airflow tile and the 'Real data: last written' table; empty backfill table: run `real_data_backfill`.",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 5,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "telemetry-db"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "telemetry-db"
+          },
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT t AS \"table\", schedule, last AS \"last written\",\n       round((EXTRACT(EPOCH FROM now() - last) / 3600)::numeric, 1) AS \"hours ago\"\nFROM (\n  SELECT 'close_approaches (JPL CAD)' AS t, 'daily' AS schedule, max(ingested_at) AS last FROM close_approaches\n  UNION ALL SELECT 'donki_events (NASA DONKI)', 'daily', max(fetched_at) FROM donki_events\n  UNION ALL SELECT 'goes_integral_protons (NASA iSWA)', 'daily', max(ingested_at) FROM goes_integral_protons\n  UNION ALL SELECT 'orion_ephemeris (JPL Horizons)', 'backfill', max(ingested_at) FROM orion_ephemeris\n  UNION ALL SELECT 'moon_ephemeris (JPL Horizons)', 'backfill', max(ingested_at) FROM moon_ephemeris\n  UNION ALL SELECT 'dsn_site_geometry (JPL Horizons)', 'backfill', max(ingested_at) FROM dsn_site_geometry\n  UNION ALL SELECT 'oem_state_vectors (NASA OEM)', 'backfill', max(ingested_at) FROM oem_state_vectors\n  UNION ALL SELECT 'mission_events (timeline)', 'backfill', max(ingested_at) FROM mission_events\n) s\nORDER BY schedule DESC, 1"
+          "rawSql": "-- daily sources: 1 if older than 26 h, 2 if older than 36 h; backfill tables: 2 if empty\nWITH t AS (\n  SELECT 'daily' AS kind, max(ingested_at) AS last, count(*) AS n FROM close_approaches\n  UNION ALL SELECT 'daily', max(fetched_at), count(*) FROM donki_events\n  UNION ALL SELECT 'daily', max(ingested_at), count(*) FROM goes_integral_protons\n  UNION ALL SELECT 'backfill', NULL::timestamptz, count(*) FROM orion_ephemeris\n  UNION ALL SELECT 'backfill', NULL::timestamptz, count(*) FROM moon_ephemeris\n  UNION ALL SELECT 'backfill', NULL::timestamptz, count(*) FROM dsn_site_geometry\n  UNION ALL SELECT 'backfill', NULL::timestamptz, count(*) FROM oem_state_vectors\n  UNION ALL SELECT 'backfill', NULL::timestamptz, count(*) FROM mission_events\n)\nSELECT CASE\n  WHEN bool_or(n = 0) OR bool_or(kind = 'daily' AND (last IS NULL OR last < now() - interval '36 hours')) THEN 2\n  WHEN bool_or(kind = 'daily' AND last < now() - interval '26 hours') THEN 1\n  ELSE 0 END AS status\nFROM t"
         }
       ],
-      "options": { "showHeader": true, "cellHeight": "sm" },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^status$/"
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
       "fieldConfig": {
-        "defaults": {},
-        "overrides": [
-          {
-            "matcher": { "id": "byName", "options": "hours ago" },
-            "properties": [
-              { "id": "custom.cellOptions", "value": { "type": "color-background", "mode": "basic" } },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    { "color": "green", "value": null },
-                    { "color": "orange", "value": 26 },
-                    { "color": "red", "value": 36 }
-                  ]
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Late",
+                  "color": "orange",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Stale",
+                  "color": "red",
+                  "index": 2
                 }
+              }
+            }
+          ],
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
               }
             ]
           }
-        ]
+        },
+        "overrides": []
       }
     },
     {
       "id": 3,
-      "type": "timeseries",
-      "title": "Synthetic rows written per minute (state_snapshot)",
-      "description": "Rows the consumer wrote per minute. A flat line at zero = the pipeline stopped; a gap = the database was unreachable.",
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 10 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
-          "editorMode": "code",
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT time_bucket('1 minute', ingested_at) AS time, count(*) AS \"rows per minute\"\nFROM state_snapshot\nWHERE $__timeFilter(ingested_at)\nGROUP BY 1\nORDER BY 1"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": { "unit": "short", "min": 0, "custom": { "drawStyle": "bars", "fillOpacity": 60 } },
-        "overrides": []
+      "type": "stat",
+      "title": "Airflow",
+      "description": "Red: the latest real_data_refresh failed, or none succeeded in 36 h. Orange: last success 26-36 h ago, or the latest hand-run real_data_backfill failed. First check: the failed task's log in the Airflow UI (SSH tunnel to 127.0.0.1:8080), then `docker compose ps` for the airflow-* services.",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 10,
+        "y": 0
       },
-      "options": { "legend": { "showLegend": false }, "tooltip": { "mode": "single" } }
-    },
-    {
-      "id": 4,
-      "type": "table",
-      "title": "Airflow: latest DAG runs",
-      "description": "The 15 most recent runs of the ingest DAGs (real_data_refresh: daily; real_data_backfill: by hand). Details and logs: the Airflow UI.",
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 10 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "airflow-db" },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "airflow-db"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "airflow-db" },
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "airflow-db"
+          },
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT dag_id AS \"DAG\", run_type AS \"type\", state, start_date AS \"started\",\n       EXTRACT(EPOCH FROM end_date - start_date)::int AS \"seconds\"\nFROM dag_run\nORDER BY start_date DESC NULLS LAST\nLIMIT 15"
+          "rawSql": "-- 2 = latest real_data_refresh failed, or no success in 36 h; 1 = last success 26-36 h ago, or the latest backfill failed\nWITH latest AS (\n  SELECT DISTINCT ON (dag_id) dag_id, state FROM dag_run ORDER BY dag_id, start_date DESC NULLS LAST\n), ok AS (\n  SELECT max(end_date) AS t FROM dag_run WHERE dag_id = 'real_data_refresh' AND state = 'success'\n)\nSELECT CASE\n  WHEN (SELECT state FROM latest WHERE dag_id = 'real_data_refresh') = 'failed' THEN 2\n  WHEN (SELECT t FROM ok) IS NULL OR (SELECT t FROM ok) < now() - interval '36 hours' THEN 2\n  WHEN (SELECT t FROM ok) < now() - interval '26 hours'\n    OR (SELECT state FROM latest WHERE dag_id = 'real_data_backfill') = 'failed' THEN 1\n  ELSE 0 END AS status"
         }
       ],
-      "options": { "showHeader": true, "cellHeight": "sm" },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^status$/"
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "OK",
+                  "color": "green",
+                  "index": 0
+                },
+                "1": {
+                  "text": "Late",
+                  "color": "orange",
+                  "index": 1
+                },
+                "2": {
+                  "text": "Failed",
+                  "color": "red",
+                  "index": 2
+                }
+              }
+            }
+          ],
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Replay position",
+      "description": "Simulated time of the newest synthetic write (UTC) and how far through the trajectory data the replay loop is. Information only: a stuck replay shows as Pipeline: Stopped.",
+      "gridPos": {
+        "h": 4,
+        "w": 5,
+        "x": 15,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "telemetry-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "telemetry-db"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "-- Simulated time of the newest write and how far through the trajectory data it is\nWITH last AS (SELECT timestamp_utc FROM telemetry_packet ORDER BY ingested_at DESC LIMIT 1),\n     span AS (SELECT min(timestamp_utc) AS a, max(timestamp_utc) AS b FROM telemetry_packet)\nSELECT to_char(last.timestamp_utc, 'Mon DD HH24:MI') || ' UTC · '\n       || round(100 * EXTRACT(EPOCH FROM last.timestamp_utc - span.a) / NULLIF(EXTRACT(EPOCH FROM span.b - span.a), 0)) || '%'\n       AS \"position\"\nFROM last, span"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "/^position$/"
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Database use",
+      "description": "Size of all databases against the managed plan's 10 GiB: orange over 70%, red over 80%. Database files only; the UpCloud console shows the full disk use. First check: 'Rows per table' and 'Database size' under Details.",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "telemetry-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "telemetry-db"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "-- Every database this user can open, against the managed plan's 10 GiB (database files only, not WAL)\nSELECT sum(pg_database_size(datname))::float8 / (10 * 1024^3) * 100 AS \"used\"\nFROM pg_database\nWHERE datallowconn AND NOT datistemplate AND has_database_privilege(datname, 'CONNECT')"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "noValue": "No data",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Mission checks",
+      "description": "Whole-mission checks on the stored synthetic data (all loops overwrite the same simulated timestamps, so these hold mid-loop too). Failed (red) = broken or missing data: check the consumer log for rejected ticks. Check (orange) = the model output changed: expected after a physics model PR, which should update the expected value in this panel.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "telemetry-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "telemetry-db"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "-- Whole-mission checks. Expected values from the #88 full-loop check; a model PR that changes the\n-- no-link count or the final dose updates them here. Red = broken data, orange = changed model output.\nWITH counts AS (\n  SELECT count(*) AS n FROM state_snapshot\n  UNION ALL SELECT count(*) FROM thermal_output\n  UNION ALL SELECT count(*) FROM power_output\n  UNION ALL SELECT count(*) FROM comms_output\n  UNION ALL SELECT count(*) FROM radiation_output\n  UNION ALL SELECT count(*) FROM cross_model_state\n  UNION ALL SELECT count(*) FROM telemetry_packet\n  UNION ALL SELECT count(*) FROM ml_feature_vectors\n), gaps AS (\n  SELECT count(*) AS n FROM (\n    SELECT timestamp_utc - lag(timestamp_utc) OVER (ORDER BY timestamp_utc) AS d FROM telemetry_packet\n  ) s WHERE d > interval '60 seconds'\n), empty AS (\n  SELECT (SELECT count(*) FILTER (WHERE belt_dose_rate_rad_s IS NULL) + count(*) FILTER (WHERE gcr_dose_rate_rad_s IS NULL)\n               + count(*) FILTER (WHERE cumulative_belt_dose_krad IS NULL) + count(*) FILTER (WHERE radiation_zone IS NULL)\n          FROM radiation_output)\n       + (SELECT count(*) FILTER (WHERE dsn_visibility IS NULL) + count(*) FILTER (WHERE link_loss_reason IS NULL)\n               + count(*) FILTER (WHERE radiation_zone IS NULL)\n          FROM telemetry_packet) AS n\n), link AS (\n  SELECT count(*) FILTER (WHERE comm_state = 'NO_LINK') AS no_link,\n         count(*) FILTER (WHERE (comm_state = 'NO_LINK') <> (link_loss_reason <> 'NONE')) AS disagree\n  FROM telemetry_packet\n), dose AS (\n  SELECT count(*) FILTER (WHERE c < prev) AS decreases,\n         (array_agg(c ORDER BY timestamp_utc DESC))[1] * 10000 AS final_mgy\n  FROM (SELECT timestamp_utc, cumulative_dose_krad AS c,\n               lag(cumulative_dose_krad) OVER (ORDER BY timestamp_utc) AS prev\n        FROM radiation_output) s\n)\nSELECT \"Check\", \"Value\", \"Expected\",\n       CASE status WHEN 0 THEN 'OK' WHEN 1 THEN 'Check' ELSE 'Failed' END AS \"Status\"\nFROM (\n  SELECT 1 AS o, 'Ticks in each of the 8 tick tables' AS \"Check\",\n         CASE WHEN min(n) = max(n) THEN min(n)::text ELSE min(n) || ' to ' || max(n) END AS \"Value\",\n         '12834' AS \"Expected\", CASE WHEN min(n) = 12834 AND max(n) = 12834 THEN 0 ELSE 2 END AS status FROM counts\n  UNION ALL SELECT 2, 'Gaps over 60 s in simulated time', n::text, '0', CASE WHEN n = 0 THEN 0 ELSE 2 END FROM gaps\n  UNION ALL SELECT 3, 'Empty fields (radiation and packet)', n::text, '0', CASE WHEN n = 0 THEN 0 ELSE 2 END FROM empty\n  UNION ALL SELECT 4, 'Link state and loss reason disagree', disagree::text, '0', CASE WHEN disagree = 0 THEN 0 ELSE 2 END FROM link\n  UNION ALL SELECT 5, 'Times the cumulative dose decreases', decreases::text, '0', CASE WHEN decreases = 0 THEN 0 ELSE 2 END FROM dose\n  UNION ALL SELECT 6, 'No-link ticks (DSN view + Moon)', no_link::text, '1401', CASE WHEN no_link = 1401 THEN 0 ELSE 1 END FROM link\n  UNION ALL SELECT 7, 'Final dose (mGy)', round(final_mgy::numeric, 2)::text, '13.52',\n         CASE WHEN round(final_mgy::numeric, 2) = 13.52 THEN 0 ELSE 1 END FROM dose\n) s\nORDER BY o"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
       "fieldConfig": {
         "defaults": {},
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "state" },
+            "matcher": {
+              "id": "byName",
+              "options": "Status"
+            },
             "properties": [
-              { "id": "custom.cellOptions", "value": { "type": "color-text" } },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
               {
                 "id": "mappings",
                 "value": [
                   {
                     "type": "value",
                     "options": {
-                      "success": { "color": "green", "index": 0 },
-                      "failed": { "color": "red", "index": 1 },
-                      "running": { "color": "blue", "index": 2 },
-                      "queued": { "color": "orange", "index": 3 }
+                      "OK": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "Check": {
+                        "color": "orange",
+                        "index": 1
+                      },
+                      "Late": {
+                        "color": "orange",
+                        "index": 2
+                      },
+                      "Failed": {
+                        "color": "red",
+                        "index": 3
+                      },
+                      "Stale": {
+                        "color": "red",
+                        "index": 4
+                      },
+                      "Empty": {
+                        "color": "red",
+                        "index": 5
+                      }
                     }
                   }
                 ]
@@ -159,49 +465,397 @@
       }
     },
     {
-      "id": 5,
+      "id": 7,
       "type": "table",
-      "title": "Rows per table",
-      "description": "Exact row counts of every table in the telemetry database (the tables are small).",
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 19 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+      "title": "Real data: last written",
+      "description": "Daily sources (refreshed by Airflow at 00:00 UTC) are Late after 26 h and Stale after 36 h. Backfill sources are loaded once, so their age is not a problem; they only need rows.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "telemetry-db"
+      },
       "targets": [
         {
           "refId": "A",
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "telemetry-db"
+          },
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT table_name AS \"table\",\n       (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I.%I', table_schema, table_name), false, true, '')))[1]::text::bigint AS \"rows\"\nFROM information_schema.tables\nWHERE table_schema = 'public' AND table_type = 'BASE TABLE'\nORDER BY 1"
-        }
-      ],
-      "options": { "showHeader": true, "cellHeight": "sm" },
-      "fieldConfig": { "defaults": {}, "overrides": [] }
-    },
-    {
-      "id": 6,
-      "type": "stat",
-      "title": "Database size",
-      "description": "Size of the telemetry and airflow databases (the managed plan has 10 GiB).",
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 19 },
-      "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "grafana-postgresql-datasource", "uid": "telemetry-db" },
-          "editorMode": "code",
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT pg_database_size('telemetry') AS \"telemetry\", pg_database_size('airflow') AS \"airflow\""
+          "rawSql": "SELECT t AS \"table\", schedule, n AS \"rows\", last AS \"last written\",\n       round((EXTRACT(EPOCH FROM now() - last) / 3600)::numeric, 1) AS \"hours ago\",\n       CASE\n         WHEN n = 0 THEN 'Empty'\n         WHEN schedule = 'backfill' THEN 'OK'\n         WHEN last < now() - interval '36 hours' THEN 'Stale'\n         WHEN last < now() - interval '26 hours' THEN 'Late'\n         ELSE 'OK' END AS \"status\"\nFROM (\n  SELECT 'close_approaches (JPL CAD)' AS t, 'daily' AS schedule, max(ingested_at) AS last, count(*) AS n FROM close_approaches\n  UNION ALL SELECT 'donki_events (NASA DONKI)', 'daily', max(fetched_at), count(*) FROM donki_events\n  UNION ALL SELECT 'goes_integral_protons (NASA iSWA)', 'daily', max(ingested_at), count(*) FROM goes_integral_protons\n  UNION ALL SELECT 'orion_ephemeris (JPL Horizons)', 'backfill', max(ingested_at), count(*) FROM orion_ephemeris\n  UNION ALL SELECT 'moon_ephemeris (JPL Horizons)', 'backfill', max(ingested_at), count(*) FROM moon_ephemeris\n  UNION ALL SELECT 'dsn_site_geometry (JPL Horizons)', 'backfill', max(ingested_at), count(*) FROM dsn_site_geometry\n  UNION ALL SELECT 'oem_state_vectors (NASA OEM)', 'backfill', max(ingested_at), count(*) FROM oem_state_vectors\n  UNION ALL SELECT 'mission_events (timeline)', 'backfill', max(ingested_at), count(*) FROM mission_events\n) s\nORDER BY schedule DESC, 1"
         }
       ],
       "options": {
-        "reduceOptions": { "values": false, "calcs": ["lastNotNull"], "fields": "" },
-        "colorMode": "none",
-        "graphMode": "none",
-        "textMode": "value_and_name"
+        "showHeader": true,
+        "cellHeight": "sm"
       },
-      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "OK": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "Check": {
+                        "color": "orange",
+                        "index": 1
+                      },
+                      "Late": {
+                        "color": "orange",
+                        "index": 2
+                      },
+                      "Failed": {
+                        "color": "red",
+                        "index": 3
+                      },
+                      "Stale": {
+                        "color": "red",
+                        "index": 4
+                      },
+                      "Empty": {
+                        "color": "red",
+                        "index": 5
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Synthetic writes per minute (8 tick tables)",
+      "description": "Rows the consumer wrote per minute, per table; the dashed line is the expected 60 (one tick per second at 60x). All lines should overlap. A dip in one table only = that table's insert fails (consumer log); a gap in all = the pipeline or the database stopped.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "telemetry-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "telemetry-db"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "-- Complete minutes only (the current minute is always partial)\nSELECT time_bucket('1 minute', ingested_at) AS time, metric, count(*) AS \"writes\"\nFROM (\n  SELECT 'state_snapshot' AS metric, ingested_at FROM state_snapshot WHERE $__timeFilter(ingested_at)\n  UNION ALL SELECT 'thermal_output', ingested_at FROM thermal_output WHERE $__timeFilter(ingested_at)\n  UNION ALL SELECT 'power_output', ingested_at FROM power_output WHERE $__timeFilter(ingested_at)\n  UNION ALL SELECT 'comms_output', ingested_at FROM comms_output WHERE $__timeFilter(ingested_at)\n  UNION ALL SELECT 'radiation_output', ingested_at FROM radiation_output WHERE $__timeFilter(ingested_at)\n  UNION ALL SELECT 'cross_model_state', ingested_at FROM cross_model_state WHERE $__timeFilter(ingested_at)\n  UNION ALL SELECT 'telemetry_packet', ingested_at FROM telemetry_packet WHERE $__timeFilter(ingested_at)\n  UNION ALL SELECT 'ml_feature_vectors', ingested_at FROM ml_feature_vectors WHERE $__timeFilter(ingested_at)\n) s\nWHERE ingested_at < date_trunc('minute', now())\nGROUP BY 1, 2\nORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 0,
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 60
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Airflow: latest DAG runs",
+      "description": "The 15 most recent runs of the ingest DAGs (real_data_refresh: daily; real_data_backfill: by hand). Details and logs: the Airflow UI.",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "airflow-db"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "airflow-db"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT dag_id AS \"DAG\", run_type AS \"type\", state, start_date AS \"started\",\n       EXTRACT(EPOCH FROM end_date - start_date)::int AS \"seconds\"\nFROM dag_run\nORDER BY start_date DESC NULLS LAST\nLIMIT 15"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "state"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "success": {
+                        "color": "green",
+                        "index": 0
+                      },
+                      "failed": {
+                        "color": "red",
+                        "index": 1
+                      },
+                      "running": {
+                        "color": "blue",
+                        "index": 2
+                      },
+                      "queued": {
+                        "color": "orange",
+                        "index": 3
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Details",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "panels": [
+        {
+          "id": 11,
+          "type": "bargauge",
+          "title": "Synthetic data: seconds since last write",
+          "description": "Per tick table, how long ago the consumer last wrote a row (ingested_at). anomaly_events is left out: the anomaly model is a placeholder and writes no rows.",
+          "gridPos": {
+            "h": 9,
+            "w": 8,
+            "x": 0,
+            "y": 23
+          },
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "telemetry-db"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "telemetry-db"
+              },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT t AS \"table\", EXTRACT(EPOCH FROM now() - last)::int AS \"seconds ago\"\nFROM (\n  SELECT 'state_snapshot' AS t, max(ingested_at) AS last FROM state_snapshot\n  UNION ALL SELECT 'thermal_output', max(ingested_at) FROM thermal_output\n  UNION ALL SELECT 'power_output', max(ingested_at) FROM power_output\n  UNION ALL SELECT 'comms_output', max(ingested_at) FROM comms_output\n  UNION ALL SELECT 'radiation_output', max(ingested_at) FROM radiation_output\n  UNION ALL SELECT 'cross_model_state', max(ingested_at) FROM cross_model_state\n  UNION ALL SELECT 'telemetry_packet', max(ingested_at) FROM telemetry_packet\n  UNION ALL SELECT 'ml_feature_vectors', max(ingested_at) FROM ml_feature_vectors\n) s\nORDER BY 1"
+            }
+          ],
+          "options": {
+            "orientation": "horizontal",
+            "displayMode": "basic",
+            "showUnfilled": true,
+            "reduceOptions": {
+              "values": true,
+              "calcs": [],
+              "fields": "/^seconds ago$/"
+            }
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "min": 0,
+              "max": 600,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "orange",
+                    "value": 120
+                  },
+                  {
+                    "color": "red",
+                    "value": 300
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          }
+        },
+        {
+          "id": 12,
+          "type": "table",
+          "title": "Rows per table",
+          "description": "Exact row counts of every table in the telemetry database (the tables are small).",
+          "gridPos": {
+            "h": 9,
+            "w": 8,
+            "x": 8,
+            "y": 23
+          },
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "telemetry-db"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "telemetry-db"
+              },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT table_name AS \"table\",\n       (xpath('/row/c/text()', query_to_xml(format('SELECT count(*) AS c FROM %I.%I', table_schema, table_name), false, true, '')))[1]::text::bigint AS \"rows\"\nFROM information_schema.tables\nWHERE table_schema = 'public' AND table_type = 'BASE TABLE'\nORDER BY 1"
+            }
+          ],
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm"
+          },
+          "fieldConfig": {
+            "defaults": {},
+            "overrides": []
+          }
+        },
+        {
+          "id": 13,
+          "type": "stat",
+          "title": "Database size",
+          "description": "Size of each database this user can open (the managed plan has 10 GiB in total).",
+          "gridPos": {
+            "h": 9,
+            "w": 8,
+            "x": 16,
+            "y": 23
+          },
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "telemetry-db"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "grafana-postgresql-datasource",
+                "uid": "telemetry-db"
+              },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT datname AS \"database\", pg_database_size(datname) AS \"size\"\nFROM pg_database\nWHERE datallowconn AND NOT datistemplate AND has_database_privilege(datname, 'CONNECT')\nORDER BY 1"
+            }
+          ],
+          "options": {
+            "reduceOptions": {
+              "values": true,
+              "calcs": [],
+              "fields": "/^size$/"
+            },
+            "colorMode": "none",
+            "graphMode": "none",
+            "textMode": "value_and_name"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes"
+            },
+            "overrides": []
+          }
+        }
+      ]
     }
   ]
 }
