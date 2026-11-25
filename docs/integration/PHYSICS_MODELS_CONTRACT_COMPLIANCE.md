@@ -7,7 +7,7 @@
 
 > **⚠️ Field-name casing:** The field names quoted in the tables below (e.g. `solar_flux_W_m2`,
 > `temp_sun_face_K`, `q_solar_absorbed_W`) were written **before the lowercase normalization**
-> (see `docs/integration/PIPELINE_STATUS.md`, 39 fields renamed). Contracts, Pydantic models, DB columns and
+> (39 fields renamed). Contracts, Pydantic models, DB columns and
 > JSON keys are now all lowercase (`solar_flux_w_m2`, `temp_sun_face_k`, ...). The physics
 > bounds, enums and quality rules cited here are unchanged and still apply.
 

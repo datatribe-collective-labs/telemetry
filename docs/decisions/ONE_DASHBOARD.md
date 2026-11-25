@@ -1,8 +1,8 @@
 # One dashboard: retire the Data Explorer
 
 > **Status:** proposed 2026-11-04 (issue #32); accepted once agreed in the PR review
-> **Replaces:** the three-tier dashboard plan in `docs/architecture/DASHBOARD_ARCHITECTURE.md`
-> (#25) and the "deliberately independent" rule for `packages/streamlit_dashboard` in `CLAUDE.md`.
+> **Replaces:** the three-tier dashboard plan in the former `docs/architecture/DASHBOARD_ARCHITECTURE.md`
+> (#25; the dashboard as built is now `docs/architecture/DASHBOARD.md`) and the "deliberately independent" rule for `packages/streamlit_dashboard` in `CLAUDE.md`.
 
 ## Context
 
