@@ -48,8 +48,8 @@ between pages:
   replay slider (with Play) moves Orion and the Moon along the real NASA/JPL path, so
   the page also works without the simulator running.
 
-The simulator can run faster than real time or start mid-mission (`TIME_SCALE`,
-`START_MET`; see [`RUN_SERVICES.md`](../../RUN_SERVICES.md)), so the dashboard has no
+The simulator can run faster than real time or start mid-mission (`PHYSICS_MODELS_TIME_SCALE`,
+`PHYSICS_MODELS_START_MET_SECONDS`; see [`RUN_SERVICES.md`](../../RUN_SERVICES.md)), so the dashboard has no
 time controls of its own beyond these.
 
 ## Source badges and explainers

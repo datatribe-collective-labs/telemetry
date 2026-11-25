@@ -1,650 +1,194 @@
-# Physics Models Package — Architecture & Integration
-
-> **Implementation status (2026-10-19):** This document is the *target architecture*.
-> Implemented today: StateEngine, Thermal (3-node), Power, Comms, Radiation, Packet
-> assembly and validation, CrossModelBus, Kafka producer, consumer
-> (`packages/physics_models/consumer.py`, Kafka → TimescaleDB).
-> **Not implemented:** Anomaly Detector, ML Feature Builder — `runner.py` emits
-> hardcoded placeholders for these. `kafka/topics.py` and the
-> per-model `generator.py` files shown below do not exist yet; topic strings live in the
-> producer/runner. Live topic count is **4** (`trajectory`, `telemetry`,
-> `cross_model_state`, `ml_features`); `events` awaits the anomaly detector.
-
-**Package:** `packages/physics_models/`  
-**Purpose:** Run physics model generators at tick rate, produce contract-compliant synthetic telemetry, publish to Kafka.  
-**Consumers:** FastAPI backend (via Kafka → TimescaleDB), Streamlit dashboard, ML training.
-
-**Authoritative Contracts:** ODCS contracts in `packages/contracts/src/odcs/` — 5 YAML files defining schemas, quality rules, SLAs, and physical bounds for all synthetic data products.
-
----
-
-## 0. ODCS Contract Authority
-
-**The ODCS contracts in `packages/contracts/src/odcs/` are the single source of truth for all data contracts.**
-
-| ODCS File | Contract Name | Kafka Topic | Description |
-|-----------|--------------|-------------|-------------|
-| `01_state_engine.odcs.yaml` | `state_engine_snapshot` | `trajectory` | Authoritative spacecraft state from OEM/Horizons/AROW |
-| `02_thermal_model.odcs.yaml` | `thermal_model_output` | `telemetry` | 3-node lumped parameter thermal model |
-| `03_power_comms_radiation.odcs.yaml` | `power_model_output`, `comms_model_output`, `radiation_model_output` | `telemetry` | Power, S-band comms, radiation dose/degradation |
-| `04_cross_model_telemetry_packet.odcs.yaml` | `cross_model_state`, `telemetry_packet` | `cross_model_state`, `telemetry` | Internal coupling bus + synthesised telemetry |
-| `05_anomaly_ml_features.odcs.yaml` | `anomaly_events`, `ml_feature_vectors` | `events`, `ml_features` | 3-layer anomaly detection + ML features |
-
-### ODCS Contract Structure (v3.1.0)
-Each contract defines:
-- **Metadata**: `apiVersion`, `kind: DataContract`, `id`, `name`, `version`, `status`, `domain`
-- **Description**: `purpose`, `limitations`, `authoritativeDefinitions` (with source URLs)
-- **Team/Ownership**: Data Product Owner, Consumers
-- **Servers/Environments**: Kafka topics per environment (production, replay, internal)
-- **SLA Properties**: latency, frequency, availability
-- **Schema**: Physical topics with fields, each having:
-  - `id`, `name`, `businessName`, `logicalType`, `physicalType`
-  - `required`, `primaryKey`, `criticalDataElement`
-  - **Quality Rules**: `nullValues`, `invalidValues` (with `validValues`), custom text rules
-- **Roles/Access**: Read/write permissions per role
-
-### Contract Hierarchy & Dependencies
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    01_state_engine.odcs.yaml                    │
-│  Authoritative state (OEM/Horizons/AROW) → trajectory topic     │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │ Provides: position, velocity, solar geometry,
-                           │ eclipse, DSN visibility, light time
-                           ▼
-┌──────────────────┬──────────────────┬──────────────────┬──────────────┐
-│ 02_thermal_model │ 03_power         │ 03_comms         │ 03_radiation │
-│ .odcs.yaml       │ _comms_          │ _model_          │ _model_      │
-│                  │ radiation.odcs   │ output           │ output       │
-│ 3-node thermal   │ Power + Comms +  │ S-band link      │ AP-8/AE-8    │
-│ model            │ Radiation        │ budget           │ dose +       │
-└────────┬─────────┴────────┬─────────┴────────┬─────────┴──────┬───────┘
-         │                │                  │                │
-         └────────────────┴──────────────────┴────────────────┘
-                           │ Cross-model coupling (1-tick lag)
-                           ▼
-              ┌──────────────────────────────┐
-              │ 04_cross_model_telemetry_    │
-              │ packet.odcs.yaml             │
-              │ cross_model_state (internal) │
-              │ telemetry_packet (primary)   │
-              └──────────────┬───────────────┘
-                             │
-              ┌──────────────┴───────────────┐
-              ▼                              ▼
-    ┌────────────────────┐           ┌────────────────────┐
-    │ 05_anomaly_ml_     │           │ 05_anomaly_ml_     │
-    │ features.odcs.yaml │           │ features.odcs.yaml │
-    │ anomaly_events     │           │ ml_feature_vectors │
-    │ (Layer 1,2,3)      │           │ (training/infer)   │
-    └────────────────────┘           └────────────────────┘
-```
-
-### Quality Rule Enforcement
-- **Layer 1 (Contract)**: Hard physical impossibilities — reject at ingest
-  - `nullValues mustBe: 0` on required fields
-  - `invalidValues mustBe: 0` with `validValues` enums
-  - Range checks derived from physics (e.g., `0 ≤ battery_soc_pct ≤ 100`)
-- **Layer 2 (Physics Rules)**: Valid data, unexpected behaviour
-  - Cross-field consistency (e.g., `eclipse_state` vs `eclipse_fraction`)
-  - Energy balance residuals
-  - Physics-baseline deviations
-- **Layer 3 (ML)**: Learned patterns, Isolation Forest / LSTM autoencoder
-  - Requires human review before alerting
-
----
-
-## 1. High-Level Architecture
-
-```mermaid
-flowchart TB
-    subgraph PM[packages/physics_models/]
-        Runner[SimulatorRunner\norchestrates tick loop]
-        SE[StateEngineGenerator\nauthoritative state]
-        TM[ThermalGenerator\n3-node lumped param]
-        PW[PowerGenerator\nsolar array, battery, loads]
-        CM[CommsGenerator\nS-band link budget]
-        RD[RadiationGenerator\nAP-8/AE-8 dose]
-        XMB[CrossModelBus\n1-tick lag coupling]
-        AD[AnomalyDetector\n2-layer + ML]
-        MF[MLFeatureBuilder\nfeature vectors]
-        KP[KafkaProducer\nasync, batched, backpressure]
-    end
-
-    subgraph EXT[External]
-        OEM[OEM/Horizons\nTrajectory]
-        KAFKA[(Kafka Cluster)]
-        API[FastAPI Backend\nTimescaleDB]
-        ST[Streamlit Dashboard]
-        ML[ML Training]
-    end
-
-    OEM -->|ephemeris| SE
-    SE --> TM
-    SE --> PW
-    SE --> CM
-    SE --> RD
-    TM --> XMB
-    PW --> XMB
-    CM --> XMB
-    RD --> XMB
-    XMB --> SE
-    SE --> KP
-    TM --> KP
-    PW --> KP
-    CM --> KP
-    RD --> KP
-    AD --> KP
-    MF --> KP
-    KP -->|topics| KAFKA
-    KAFKA -->|consumer| API
-    KAFKA -->|consumer| ST
-    KAFKA -->|consumer| ML
-```
-
----
-
-## 2. Tick Loop Data Flow
-
-```mermaid
-sequenceDiagram
-    participant Runner
-    participant SE as StateEngine
-    participant TM as Thermal
-    participant PW as Power
-    participant CM as Comms
-    participant RD as Radiation
-    participant XMB as CrossModelBus
-    participant AD as Anomaly
-    participant MF as MLFeatures
-    participant KP as KafkaProducer
-
-    loop Every Tick (1 Hz default)
-        Runner->>SE: tick()
-        SE-->>Runner: SyntheticStateSnapshot
-        
-        par Parallel Physics Models
-            Runner->>TM: tick(cross_model_state)
-            TM-->>Runner: SyntheticThermalOutput
-            Runner->>PW: tick(cross_model_state)
-            PW-->>Runner: SyntheticPowerOutput
-            Runner->>CM: tick(cross_model_state)
-            CM-->>Runner: SyntheticCommsOutput
-            Runner->>RD: tick(cross_model_state)
-            RD-->>Runner: SyntheticRadiationOutput
-        end
-        
-        Runner->>XMB: update(thermal, power, comms, radiation)
-        XMB-->>Runner: updated CrossModelState
-        
-        Runner->>SE: assemble_packet(state, thermal, power, comms, radiation)
-        SE-->>Runner: SyntheticTelemetryPacket
-        
-        Runner->>AD: check(packet)
-        AD-->>Runner: SyntheticAnomalyEvent | None
-        
-        Runner->>MF: build(packet)
-        MF-->>Runner: SyntheticMLFeatureVector
-        
-        Runner->>KP: send_all(outputs)
-        KP-->>Runner: batched, async
-    end
-```
-
----
-
-## 3. Package Structure
-
-```
-packages/physics_models/
-├── pyproject.toml
-├── Dockerfile
-├── src/
-│   └── physics_models/
-│       ├── __init__.py
-│       ├── config.py                 # Pydantic config for all generators
-│       ├── runner.py                 # SimulatorRunner (tick loop orchestrator)
-│       ├── kafka/
-│       │   ├── __init__.py
-│       │   ├── producer.py           # Async batched producer with backpressure
-│       │   └── topics.py             # Topic names from ODCS contracts
-│       ├── state_engine/
-│       │   ├── __init__.py
-│       │   ├── generator.py          # StateEngineGenerator
-│       │   ├── physics.py            # Orbital mechanics, solar flux, attitude
-│       │   └── planned_attitude.py   # Artemis II attitude timeline (107 segments)
-│       ├── thermal/
-│       │   ├── __init__.py
-│       │   ├── generator.py          # ThermalGenerator
-│       │   └── physics.py            # 3-node lumped parameter
-│       ├── power/
-│       │   ├── __init__.py
-│       │   ├── generator.py          # PowerGenerator
-│       │   └── physics.py            # Solar array, battery, loads
-│       ├── comms/
-│       │   ├── __init__.py
-│       │   ├── generator.py          # CommsGenerator
-│       │   └── physics.py            # S-band link budget
-│       ├── radiation/
-│       │   ├── __init__.py
-│       │   ├── generator.py          # RadiationGenerator
-│       │   └── physics.py            # AP-8/AE-8, dose accumulation
-│       ├── cross_model/
-│       │   ├── __init__.py
-│       │   └── bus.py                # CrossModelBus (1-tick lag)
-│       ├── anomaly/
-│       │   ├── __init__.py
-│       │   ├── detector.py           # 2-layer (contract + rules) + ML
-│       │   └── ml_features.py        # Feature vector builder
-│       └── packet/
-│           ├── __init__.py
-│           └── assembler.py          # TelemetryPacket assembler
-├── tests/
-│   └── unit/
-└── configs/
-    └── default.yaml                  # Runtime config (tick_hz, kafka, etc.)
-```
-
----
-
-## 4. Key Interfaces
-
-### 4.1 Generator Protocol
-
-```python
-# physics_models/__init__.py
-from typing import Protocol
-from contracts import (
-    SyntheticStateSnapshot,
-    SyntheticThermalOutput,
-    SyntheticPowerOutput,
-    SyntheticCommsOutput,
-    SyntheticRadiationOutput,
-    SyntheticCrossModelState,
-    SyntheticTelemetryPacket,
-    SyntheticAnomalyEvent,
-    SyntheticMLFeatureVector,
-)
-
-class Generator(Protocol):
-    """Base protocol for all physics model generators."""
-    def tick(self, cross_model_state: SyntheticCrossModelState) -> Any: ...
-```
-
-### 4.2 State Engine Generator
-
-```python
-# physics_models/state_engine/generator.py
-class StateEngineGenerator:
-    def __init__(
-        self,
-        oem_source: OEMSource,           # Horizons ephemeris or OEM file
-        planned_attitude: PlannedAttitude, # planned_attitude.py resolver
-        config: StateEngineConfig,
-    ):
-        ...
-
-    def tick(self, cross_model_state: SyntheticCrossModelState) -> SyntheticStateSnapshot:
-        """
-        1. Interpolate OEM position/velocity at current tick
-        2. Resolve planned attitude for current MET (planned_attitude.resolve_attitude)
-        3. Compute solar incidence angle, eclipse state, Earth distance, DSN visibility
-        4. Return SyntheticStateSnapshot (authoritative per-tick state)
-        """
-```
-
-### 4.3 Cross-Model Bus (1-Tick Lag)
-
-```python
-# physics_models/cross_model/bus.py
-@dataclass
-class CrossModelBus:
-    """Coupling bus — outputs from tick N feed inputs to tick N+1."""
-    
-    # Thermal → Power
-    electronics_bay_temp_k: float = 293.15
-    # Power → Thermal
-    power_dissipation_w: float = 0.0
-    # Radiation → Power
-    solar_array_degradation_factor: float = 1.0
-    # Radiation → Thermal
-    thermal_coating_alpha_factor: float = 1.0
-    thermal_coating_eps_factor: float = 1.0
-    # Radiation → Comms
-    plasma_noise_factor: float = 1.0
-
-    def update(
-        self,
-        thermal: SyntheticThermalOutput,
-        power: SyntheticPowerOutput,
-        comms: SyntheticCommsOutput,
-        radiation: SyntheticRadiationOutput,
-    ) -> None:
-        """Called AFTER all physics models complete. Updates lagged state for next tick."""
-        self.electronics_bay_temp_k = thermal.temp_electronics_bay_k
-        self.power_dissipation_w = power.total_load_w
-        self.solar_array_degradation_factor = radiation.solar_array_degradation
-        self.thermal_coating_alpha_factor = radiation.thermal_alpha_degradation
-        self.thermal_coating_eps_factor = radiation.thermal_eps_degradation
-        self.plasma_noise_factor = comms.signal_quality  # proxy for plasma noise
-```
-
-**Critical:** Cross-model coupling uses **1-tick lag** to avoid circular dependencies. Models read `cross_model_state` from previous tick.
-
----
-
-## 5. Kafka Integration
-
-### 5.1 Topic Mapping (from ODCS)
-
-```python
-# physics_models/kafka/topics.py
-class Topics:
-    TRAJECTORY = "trajectory"                    # SyntheticStateSnapshot
-    TELEMETRY = "telemetry"                      # SyntheticTelemetryPacket + thermal/power/comms/radiation
-    CROSS_MODEL_STATE = "cross_model_state"      # SyntheticCrossModelState
-    EVENTS = "events"                            # SyntheticAnomalyEvent
-    ML_FEATURES = "ml_features"                  # SyntheticMLFeatureVector
-```
-
-### 5.2 Producer Config
-
-```python
-# physics_models/kafka/producer.py
-from confluent_kafka import Producer
-from contracts import (
-    SyntheticStateSnapshot,
-    SyntheticThermalOutput,
-    SyntheticPowerOutput,
-    SyntheticCommsOutput,
-    SyntheticRadiationOutput,
-    SyntheticCrossModelState,
-    SyntheticTelemetryPacket,
-    SyntheticAnomalyEvent,
-    SyntheticMLFeatureVector,
-)
-
-class PhysicsModelsKafkaProducer:
-    def __init__(self, bootstrap_servers: str):
-        self._producer = Producer({
-            "bootstrap.servers": bootstrap_servers,
-            "linger.ms": 5,                    # batch within tick
-            "batch.size": 65536,
-            "compression.type": "zstd",
-            "max.in.flight.requests.per.connection": 5,
-            "acks": "all",
-        })
-
-    def send_state(self, msg: SyntheticStateSnapshot) -> None:
-        self._produce(Topics.TRAJECTORY, msg.timestamp_utc.isoformat(), msg)
-
-    def send_thermal(self, msg: SyntheticThermalOutput) -> None:
-        self._produce(Topics.TELEMETRY, msg.timestamp_utc.isoformat(), msg)
-
-    def send_power(self, msg: SyntheticPowerOutput) -> None:
-        self._produce(Topics.TELEMETRY, msg.timestamp_utc.isoformat(), msg)
-
-    def send_comms(self, msg: SyntheticCommsOutput) -> None:
-        self._produce(Topics.TELEMETRY, msg.timestamp_utc.isoformat(), msg)
-
-    def send_radiation(self, msg: SyntheticRadiationOutput) -> None:
-        self._produce(Topics.TELEMETRY, msg.timestamp_utc.isoformat(), msg)
-
-    def send_cross_model(self, msg: SyntheticCrossModelState) -> None:
-        self._produce(Topics.CROSS_MODEL_STATE, msg.timestamp_utc.isoformat(), msg)
-
-    def send_packet(self, msg: SyntheticTelemetryPacket) -> None:
-        self._produce(Topics.TELEMETRY, msg.timestamp_utc.isoformat(), msg)
-
-    def send_anomaly(self, msg: SyntheticAnomalyEvent) -> None:
-        self._produce(Topics.EVENTS, msg.event_id, msg)
-
-    def send_ml_features(self, msg: SyntheticMLFeatureVector) -> None:
-        self._produce(Topics.ML_FEATURES, msg.timestamp_utc.isoformat(), msg)
-
-    def _produce(self, topic: str, key: str, msg: Any) -> None:
-        self._producer.produce(
-            topic,
-            key=key.encode(),
-            value=msg.model_dump_json().encode(),
-            headers=[("schema_version", b"1")],
-        )
-
-    def flush(self, timeout: float = 5.0) -> None:
-        self._producer.flush(timeout)
-```
-
----
-
-## 6. Contract Compliance
-
-**Every generator output is a Pydantic model from `contracts`:**
-
-```python
-# physics_models/thermal/generator.py
-from contracts import SyntheticThermalOutput
-from physics_models.cross_model import CrossModelBus
-
-class ThermalGenerator:
-    def tick(self, cross_model: CrossModelBus) -> SyntheticThermalOutput:
-        # ... compute physics ...
-        return SyntheticThermalOutput(
-            timestamp_utc=current_tick,
-            temp_sun_face_k=...,
-            temp_shadow_face_k=...,
-            temp_electronics_bay_k=...,
-            q_solar_absorbed_w=...,
-            q_radiated_w=...,
-            q_internal_w=cross_model.power_dissipation_w,  # coupling
-            heater_active=...,
-            heater_power_w=...,
-            thermal_state=...,  # Literal["NOMINAL", "COLD_SURVIVAL", "HOT_LIMIT"]
-        )
-```
-
-**Guarantees:**
-- Schema validation at generation time (fail fast)
-- Kafka messages always match contract schema
-- FastAPI consumer uses same models → zero serialization mismatch
-
----
-
-## 7. Configuration
-
-```yaml
-# physics_models/configs/default.yaml
-tick_hz: 1.0                              # simulation tick rate
-kafka:
-  bootstrap_servers: "kafka:9092"
-  topics:
-    trajectory: "trajectory"
-    telemetry: "telemetry"
-    cross_model_state: "cross_model_state"
-    events: "events"
-    ml_features: "ml_features"
-
-state_engine:
-  oem_source: "horizons"                   # or "oem_file"
-  oem_file_path: "/data/orion_artemis2.oem"
-  liftoff_utc: "2026-04-01T22:35:00Z"
-
-thermal:
-  tick_hz: 1.0
-
-power:
-  tick_hz: 1.0
-
-comms:
-  tick_hz: 1.0
-
-radiation:
-  tick_hz: 1.0
-
-anomaly:
-  detection_layer_1_enabled: true         # contract thresholds
-  detection_layer_2_enabled: true         # physics rules
-  ml_enabled: true                        # ML inference
-
-ml_features:
-  tick_hz: 1.0
-```
-
----
-
-## 8. Deployment
-
-```yaml
-# docker-compose.yml (add to existing)
-services:
-  physics_models:
-    build:
-      context: .
-      dockerfile: packages/physics_models/Dockerfile
-    environment:
-      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - CONFIG_PATH=/configs/default.yaml
-    volumes:
-      - ./packages/physics_models/configs:/configs:ro
-      - ./data/oem:/data/oem:ro
-    depends_on:
-      kafka:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-```
-
-```dockerfile
-# packages/physics_models/Dockerfile
-FROM python:3.12-slim
-
-WORKDIR /app
-
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-# Copy workspace for contracts dependency
-COPY packages/contracts /app/packages/contracts
-COPY packages/physics_models /app/packages/physics_models
-
-# Install
-RUN uv sync --package physics_models --no-dev
-
-# Copy OEM data
-COPY data/oem /data/oem
-
-ENTRYPOINT ["uv", "run", "--package", "physics_models", "python", "-m", "physics_models.runner"]
-```
-
----
-
-## 9. Integration Points
-
-| Component | Interface | Direction |
-|-----------|-----------|-----------|
-| **OEM/Horizons** | `StateEngineGenerator` reads ephemeris | Input |
-| **planned_attitude.py** | `resolve_attitude(MET)` → mode + definition | Input |
-| **Kafka** | `PhysicsModelsKafkaProducer` publishes to 4 live topics (`trajectory`, `telemetry`, `cross_model_state`, `ml_features`); `events` planned with AnomalyDetector | Output |
-| **FastAPI Backend** | Consumes Kafka → TimescaleDB → `/telemetry/synthetic/*` | Consumer |
-| **Streamlit Dashboard** | Same API or direct Kafka consumer | Consumer |
-| **ML Training** | Consumes `ml_features` topic | Consumer |
-
----
-
-## 10. `planned_attitude.py` Integration
-
-The file `packages/pipelines/transforms/planned_attitude.py` (107 verified segments, FD01-FD10) moves to:
-
-```
-packages/physics_models/src/physics_models/state_engine/planned_attitude.py
-```
-
-**Usage in StateEngineGenerator:**
-
-```python
-from physics_models.state_engine.planned_attitude import (
-    resolve_attitude,
-    get_solar_incidence_angle_estimate,
-    get_solar_array_gimbal_estimate,
-    AttitudeMode,
-)
-
-class StateEngineGenerator:
-    def tick(self, cross_model: CrossModelBus) -> SyntheticStateSnapshot:
-        met = current_tick - self.liftoff_utc
-        attitude_mode, mode_def = resolve_attitude(met)
-        
-        # Solar angles from attitude
-        solar_incidence = get_solar_incidence_angle_estimate(met)
-        solar_array_gimbal = get_solar_array_gimbal_estimate(met)
-        
-        # Eclipse state from orbital geometry
-        eclipse_state, eclipse_fraction = compute_eclipse(state_vector)
-        
-        return SyntheticStateSnapshot(
-            timestamp_utc=current_tick,
-            x_km=..., y_km=..., z_km=...,
-            vx_kms=..., vy_kms=..., vz_kms=...,
-            solar_incidence_angle_deg=solar_incidence,
-            solar_array_angle_deg=solar_array_gimbal,
-            eclipse_state=eclipse_state,
-            eclipse_fraction=eclipse_fraction,
-            # ... other fields
-        )
-```
-
----
-
-## 11. Migration Plan
-
-| Step | Action | Deliverable |
-|------|--------|-------------|
-| 1 | Create `packages/physics_models/` skeleton | Package structure + pyproject.toml |
-| 2 | Move `planned_attitude.py` → `state_engine/` | Attitude resolver available |
-| 3 | Port thermal physics from notebooks | `thermal/physics.py` + `generator.py` |
-| 4 | Port power physics | `power/physics.py` + `generator.py` |
-| 5 | Port comms physics | `comms/physics.py` + `generator.py` |
-| 6 | Port radiation physics | `radiation/physics.py` + `generator.py` |
-| 7 | Implement CrossModelBus | `cross_model/bus.py` |
-| 8 | Implement AnomalyDetector + MLFeatureBuilder | `anomaly/` |
-| 9 | Implement Kafka producer | `kafka/producer.py` |
-| 10 | Implement SimulatorRunner | `runner.py` |
-| 11 | Add to docker-compose, CI | Deployable service |
-| 12 | Integration test: Kafka → API → Dashboard | End-to-end verified |
-
----
-
-## 12. Key Design Principles
-
-| Principle | Implementation |
-|-----------|----------------|
-| **Contract-first** | Every output is a `contracts` Pydantic model |
-| **Single responsibility** | One generator per physics domain |
-| **1-tick lag coupling** | CrossModelBus prevents circular deps |
-| **Async Kafka** | Non-blocking produce, batched per tick |
-| **Config-driven** | YAML config, no hardcoded params |
-| **Testable** | Each generator unit-testable with mocked cross_model |
-| **Observability** | Structured logging per tick, metrics exported |
-
----
-
-## 13. Open Questions
-
-1. **Tick rate:** 1 Hz default. Can models support 10 Hz for high-freq comms?
-2. **OEM interpolation:** Linear vs. Chebyshev vs. SPICE kernels?
-3. **Attitude quaternions:** `planned_attitude.py` gives modes + estimates. Need quaternion resolver for true `roll/pitch/yaw` in StateSnapshot.
-4. **ML inference:** Where does the model live? In-process (ONNX) or separate Triton server?
-5. **Determinism:** Fixed random seeds for reproducible Monte Carlo runs?
-
----
-
-## Appendix: Current File Locations to Migrate
-
-| Current Location | Target Location |
-|-----------------|-----------------|
-| `packages/pipelines/transforms/planned_attitude.py` | `packages/physics_models/state_engine/planned_attitude.py` |
-| `notebooks/JPL_Horizons.ipynb` physics cells | `state_engine/physics.py` |
-| `notebooks/orion_visualisations_draft.ipynb` thermal/power | `thermal/physics.py`, `power/physics.py` |
-| `packages/pipelines/transforms/sgps_proton_flux.py` | `radiation/physics.py` (or keep in pipelines as transform) |
+# Physics models
+
+How `packages/physics_models/` simulates Orion's telemetry (the **synthetic data**): the
+tick loop, the five models, how they are coupled, and how each tick is checked and
+published. Where it sits in the whole system: [`ARCHITECTURE.md`](../ARCHITECTURE.md).
+Field-by-field contract status: [`CONTRACT_COMPLIANCE.md`](../integration/CONTRACT_COMPLIANCE.md).
+
+## The tick loop
+
+`physics_models.runner.SimulatorRunner` runs one tick per wall-clock second (`tick_hz: 1.0`).
+Each tick (`_run_tick`):
+
+1. **Clock.** Simulated time is `liftoff + start_met_seconds + ticks x time_scale`, so
+   the replay can start mid-mission and run faster than real time.
+2. **State engine.** Interpolates Orion's position and velocity from the NASA OEM arc, then
+   computes Sun distance, solar flux, eclipse, DSN visibility and light time.
+3. **Models.** Thermal, power, comms and radiation each compute their output for the tick.
+   They read each other's results from the **previous** tick only (see Coupling).
+4. **Packet.** `packet.assemble_packet` combines the outputs into one telemetry packet.
+   A placeholder ML feature vector is built next to it.
+5. **Validation.** `packet.validate_tick` checks every output against the contract rules.
+   If anything fails, the tick publishes nothing and does not update the coupling bus.
+   The clock still moves on, and the models' internal state is not rolled back.
+6. **Coupling bus.** The valid outputs are stored for the next tick.
+7. **Kafka.** Everything is published (see Publishing).
+
+With `loop` on, the first tick past the end of the OEM arc (atmospheric entry) starts the
+replay over from `start_met_seconds` with fresh models. The ticks fall on the same
+timestamps as before, so the consumer overwrites the previous loop's rows instead of adding
+new ones.
+
+If the OEM file cannot be loaded, the state engine falls back to a 300 km circular
+placeholder orbit and prints a warning.
+
+## The models
+
+| Model | Code | What it computes | Main inputs |
+|-------|------|------------------|-------------|
+| State engine | `oem.py`, `state_engine/` | Position and velocity (EME2000, km), solar flux, eclipse (`SUNLIT`/`PENUMBRA`/`UMBRA`), DSN visibility, light time, solar angles | NASA OEM arc, planned attitude timeline |
+| Thermal | `thermal/physics.py` (`ThermalModel3Node`) | Temperatures of three nodes (sun face, shadow face, electronics bay), heat flows, survival heater, `thermal_state` | Solar flux, incidence, eclipse; electrical load from power |
+| Power | `power/physics.py` (`PowerModel`) | Solar array power, battery charge, voltage and current, net and available power, `power_state` | Solar flux, array angle, eclipse; bay temperature from thermal; heater load |
+| Comms | `comms/physics.py` (`CommsModel`) | S-band downlink budget (EIRP, path loss, Eb/N0, margin), data rate, `comm_state`, `link_loss_reason` | Earth distance, DSN view; power state from power |
+| Radiation | `radiation/physics.py` (`DoseProfile`) | Dose rate and cumulative dose at one cabin sensor, split into radiation belts and cosmic rays; `radiation_zone` | Orion's distance from Earth along the OEM arc |
+
+### State engine
+
+- **Trajectory.** `oem.py` reads the newest arc from `data/oem/all-artemis-ii-oem-files.zip`
+  (CCSDS OEM v2.0, Earth-centred EME2000, UTC). Orion's position is interpolated
+  linearly between points. Orion does not move before the arc starts, on April 2 around
+  02:00 UTC (MET about 12,300 s), so the server demo starts there.
+- **Sun.** A circular orbit at 1 AU, accurate enough for solar flux (about ±1 %) and
+  eclipse geometry.
+- **Moon.** `state_engine/moon.py` interpolates a JPL Horizons table bundled with the
+  package (`moon_ephemeris.csv`, 10-minute steps).
+- **DSN visibility.** `state_engine/dsn.py` places the three DSN antennas used
+  (DSS-14 Goldstone, DSS-43 Canberra, DSS-63 Madrid) on the rotating Earth. Orion is
+  visible from a site above 10° elevation, unless the Moon is in the line of sight.
+  When no site can see Orion, it names the cause: `MOON_BLOCKED` or `OUT_OF_VIEW`.
+- **Attitude.** Solar incidence and solar array angles are rough estimates from the planned
+  attitude mode at that moment (`contracts.planned_attitude`). Roll, pitch and yaw are
+  published as 0, because Orion's real attitude is not public.
+
+### Thermal
+
+A three-node lumped model. Each node has a heat capacity, area and surface properties,
+and conducts heat to the other nodes and radiates it to space. Node parameters come from
+the config (`thermal:` in `configs/*.yaml`). A survival heater with hysteresis switches on
+below the contract's −5 °C setpoint. A share of the electrical load (`bay_heat_fraction`,
+30 %) heats the electronics bay. `thermal_state` follows contract 02: `COLD_SURVIVAL` below
+249 K in the bay (or below 100 K on a face), `HOT_LIMIT` above 310 K in the bay (or 450 K
+on the sun face).
+
+### Power
+
+Solar arrays (44.8 m², 28 % efficiency at beginning of life, temperature derated) charge a
+100 Ah, 28 V Li-ion battery. The load is a fixed 1,200 W placeholder, plus the heater when
+it is on: Orion's real load profile is not published. Available power is
+`array power x 0.92 − 800 W` (contract 03). `power_state` is set from the battery charge:
+`CRITICAL` at or below 10 %, `LOW_POWER_MODE` up to 20 %, `BATTERY_DISCHARGE` while the
+battery drains, otherwise `NOMINAL`.
+
+### Comms
+
+An S-band downlink budget from Orion to a DSN 34 m antenna, recomputed every tick (the
+model keeps no state). The 2216.5 MHz carrier, the 1939.4 kbps top rate and the DSN receiver
+figures come from published sources. Orion's transmit power and antenna gain are not
+published, so their product (EIRP) is calibrated so that the top rate still works at
+410,000 km. The model picks the highest data rate that keeps a 3 dB operating margin
+(`NOMINAL`). If none does, it uses the lowest rate while the margin is still positive
+(`DEGRADED`). Otherwise the state is `NO_LINK`, with one `link_loss_reason`:
+
+- `MOON_BLOCKED` or `OUT_OF_DSN_VIEW` if no antenna can see Orion (geometry wins),
+- `NO_POWER` if the transmitter was off because the previous power tick was `CRITICAL`,
+- `LINK_BUDGET` if the signal is simply too weak.
+
+### Radiation
+
+A simplified dose in water at one cabin sensor (HERA HSU2), not the crew's actual dose:
+
+- **Radiation belts:** two Gaussian shells by distance from Earth, calibrated against the
+  Artemis I measurements (Nature 634, 48-52, 2024). `tests/unit/physics_models/radiation/test_calibration.py`
+  checks the calibration on the real trajectory.
+- **Galactic cosmic rays:** the measured deep-space rate, reduced by the part of the sky
+  that Earth and the Moon block.
+
+The dose is computed once for the whole OEM arc on a 10 s grid (`DoseProfile`), so it
+depends only on the timestamp, not on the replay speed, and the cumulative dose never
+goes down. `sep_event_active` is false: the real GOES proton flux during the mission stayed
+below the 10 pfu storm threshold. The radiation degradation factors are not modelled and
+stay 1.0.
+
+## Coupling
+
+`cross_model.CrossModelBus` passes values between models with a **one-tick lag**: a model at
+tick N reads what the others produced at tick N−1. This avoids circular dependencies
+inside a tick.
+
+| From -> to | Value | Effect |
+|------------|-------|--------|
+| Thermal -> power | Electronics bay temperature | Used as a stand-in for the array and battery temperatures: solar array derating, battery charge and voltage |
+| Power -> thermal | Total electrical load | 30 % of it heats the electronics bay |
+| Power -> comms | `power_state` | `CRITICAL` switches the transmitter off |
+| Radiation -> power | Solar array degradation | Always 1.0 (not modelled) |
+| Radiation -> thermal | Coating α / ε degradation | Published on the bus, always 1.0, not read by the thermal model |
+| Radiation -> comms | Plasma noise factor | Always 1.0 (not modelled) |
+
+In the same tick, the heater's power is added to the power model's load.
+
+The bus state is published on the `cross_model_state` topic every tick.
+
+## Validation
+
+`packet/validation.py` runs before anything leaves the simulator. Among other checks:
+
+- all timestamps in the tick match and every number is finite,
+- eclipse fraction is within [0, 1], temperatures are above 0 K, and battery charge is within [0, 100] %,
+- solar array power is 0 in `UMBRA`, and `power_state` matches the battery charge,
+- `comm_state`, data rate, signal quality and `link_loss_reason` agree, and there is no
+  link while no antenna has a clear view,
+- the total dose rate equals belt plus cosmic rays, and the unit conversions agree,
+- the packet's `all_nominal` matches the subsystem states.
+
+The tests are in `tests/unit/physics_models/packet/`.
+
+## Publishing
+
+`kafka/producer.py` uses `confluent_kafka` (`acks=all`, zstd compression, small batches).
+Each message is keyed by its `timestamp_utc`. Each tick sends:
+
+| Topic | Messages |
+|-------|----------|
+| `trajectory` | state snapshot |
+| `telemetry` | thermal, power, comms, radiation, packet |
+| `cross_model_state` | coupling bus state |
+| `ml_features` | ML feature vector (**placeholder**: fixed values) |
+| `events` | anomaly events: the detector is a **placeholder** that never fires, so nothing is sent |
+
+`consumer.py` (package root, its own container) subscribes to all five topics, tells the
+message types on `telemetry` apart by a field only that type has, and upserts each row on
+`timestamp_utc` into its TimescaleDB table.
+
+## Configuration
+
+`configs/default.yaml` (native runs) and `configs/docker.yaml` (the image, chosen with
+`PHYSICS_MODELS_CONFIG`) hold the Kafka address, OEM source, liftoff time
+(2026-04-01 22:35 UTC) and model parameters. Three environment variables override the
+replay settings:
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `PHYSICS_MODELS_TIME_SCALE` | 1.0 | Simulated seconds per tick |
+| `PHYSICS_MODELS_START_MET_SECONDS` | 0 | Mission elapsed time to start from |
+| `PHYSICS_MODELS_LOOP` | 0 | `1`: restart at the end of the OEM arc |
+
+The public server runs `12300` / `60` / `1` (`docker-compose.prod.yml`): from the start of
+the OEM arc, one simulated minute per second, looping.
+
+## Docker images
+
+Both images are built from the repo root so `uv` can resolve the workspace:
+
+- `Dockerfile`: the simulator, with the OEM zip copied to `/app/oem/`.
+- `Dockerfile.consumer`: the Kafka -> TimescaleDB consumer.
+
+Both run as a non-root user.
+
+## Not built
+
+- **Anomaly detection** (contract 05): `_check_anomaly` returns nothing, so no events are
+  published.
+- **ML features** (contract 05): `_build_ml_features` fills fixed values.
+- **Real attitude**: roll, pitch and yaw are 0, and solar angles are estimates from the
+  planned attitude mode.
+- **Radiation effects on other models**: degradation and plasma noise stay 1.0.
