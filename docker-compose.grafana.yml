@@ -4,7 +4,7 @@
 # rules). Its own file, not a profile: compose checks the `:?` variables below even for
 # a disabled service, which would break every setup that doesn't use Grafana.
 #
-#   Server:  add it to COMPOSE_FILE in .env (see docs/guides/UPCLOUD_DEPLOYMENT.md), then
+#   Server:  add it to COMPOSE_FILE in .env (see docs/guides/MONITORING.md), then
 #            UI over `ssh -L 3000:localhost:3000 deploy@<server-ip>`: http://localhost:3000
 #   Laptop:  GRAFANA_ADMIN_PASSWORD=admin GRAFANA_DB_USER=<POSTGRES_USER> GRAFANA_DB_PASSWORD=<POSTGRES_PASSWORD> \
 #            GRAFANA_SMTP_USER=none GRAFANA_SMTP_PASSWORD=none GRAFANA_ALERT_EMAIL=none@example.invalid \

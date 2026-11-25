@@ -160,7 +160,8 @@ All names are lowercase snake_case. Model-by-model compliance:
 | `docker-compose.grafana.yml` | Read-only Grafana ops dashboard and email alerts |
 
 Start-up order and native runs: [`RUN_SERVICES.md`](../RUN_SERVICES.md). Server runbook:
-[`guides/UPCLOUD_DEPLOYMENT.md`](guides/UPCLOUD_DEPLOYMENT.md).
+[`guides/UPCLOUD_DEPLOYMENT.md`](guides/UPCLOUD_DEPLOYMENT.md); its monitoring:
+[`guides/MONITORING.md`](guides/MONITORING.md).
 
 ## Repository layout
 

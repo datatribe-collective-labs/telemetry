@@ -1,7 +1,7 @@
 # Monitoring with Grafana and healthchecks.io
 
 > **Status:** accepted and running since 2026-11-24 (#46; #106, #108, #110, #112).
-> Operating it: [`guides/UPCLOUD_DEPLOYMENT.md`](../guides/UPCLOUD_DEPLOYMENT.md).
+> Operating it: [`guides/MONITORING.md`](../guides/MONITORING.md).
 
 ## Context
 
@@ -42,7 +42,7 @@ Alerts are sent from a dedicated Gmail account over SMTP (port 587; UpCloud bloc
 ## Consequences
 
 - Failure drills (stopping the consumer, pausing cron) were run on the live server and
-  are documented in the runbook.
-- Before a planned restart, silence the Grafana alerts first (runbook, "Planned restarts").
+  are documented in [`guides/MONITORING.md`](../guides/MONITORING.md#drills).
+- Before a planned restart, silence the Grafana alerts first ([Planned restarts](../guides/MONITORING.md#planned-restarts)).
 - At project end, delete the healthchecks.io check and the alert Gmail account along with
   the server.
