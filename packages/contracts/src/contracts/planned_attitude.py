@@ -6,7 +6,9 @@ translated to quaternions/Euler angles by the state engine using
 Orion operations concepts.
 
 Source: NASA Artemis II Overview Timeline - FINAL (January 8, 2026)
-Canonical truth model: 107 verified attitude cells across FD01-FD10
+Truth model: 108 attitude segments across FD01-FD10, extracted from the PDF.
+DRAFT: not yet checked against the PDF row by row; the checklist for that is
+docs/archive/TIMELINE_FACTCHECK_CHECKLIST.md.
 """
 
 from dataclasses import dataclass
@@ -70,7 +72,7 @@ class AttitudeSegment:
 
 
 # =============================================================================
-# ATTITUDE TIMELINE — Canonical PDF Truth Model (107 verified cells)
+# ATTITUDE TIMELINE — extracted from the PDF (108 segments, DRAFT: not fact-checked)
 # =============================================================================
 # Format: (MET_start, MET_end, AttitudeMode, description)
 # MET format: "DD/HH:MM" = days/hours:minutes from liftoff

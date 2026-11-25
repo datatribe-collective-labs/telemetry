@@ -14,14 +14,14 @@ For *running* the services, see the root [`RUN_SERVICES.md`](../RUN_SERVICES.md)
 
 | Doc | Read this when… |
 |-----|-----------------|
-| [architecture/PHYSICS_MODELS.md](architecture/PHYSICS_MODELS.md) | You're working in `packages/physics_models/` — package layout, tick loop, cross-model coupling, Kafka producer design. **Note: this is the target architecture**; anomaly and ML features are not yet implemented (banner at top of file). |
+| [architecture/PHYSICS_MODELS.md](architecture/PHYSICS_MODELS.md) | You're working in `packages/physics_models/` — the tick loop, the five models, one-tick-lag coupling, tick validation, Kafka publishing, replay settings. Anomaly and ML are placeholders. |
 | [architecture/DASHBOARD.md](architecture/DASHBOARD.md) | You're changing the Digital Twin dashboard (`dashboard/src/prototype/`) — pages, data flow from the backend, live/replay, source badges, design decisions. |
 
-## Integration — *"Is the pipeline wired up correctly?"*
+## Integration — *"Does the output meet the contracts?"*
 
 | Doc | Read this when… |
 |-----|-----------------|
-| [integration/PHYSICS_MODELS_CONTRACT_COMPLIANCE.md](integration/PHYSICS_MODELS_CONTRACT_COMPLIANCE.md) | You're implementing a physics model and need its ODCS contract field-by-field: quality rules, bounds, compliance status per model. |
+| [integration/CONTRACT_COMPLIANCE.md](integration/CONTRACT_COMPLIANCE.md) | You want to know how well each physics model meets its ODCS contract: status per contract, how the rules are enforced, known deviations. |
 
 ## Guides — *"How do I do X?"*
 
@@ -35,10 +35,13 @@ For *running* the services, see the root [`RUN_SERVICES.md`](../RUN_SERVICES.md)
 |-----|-----------------|
 | [decisions/ONE_DASHBOARD.md](decisions/ONE_DASHBOARD.md) | You wonder why there is one dashboard, not a separate real-data Data Explorer, and what happened to its pages (#32). |
 | [decisions/SPARK_SCALE_REQUIREMENTS.md](decisions/SPARK_SCALE_REQUIREMENTS.md) | You're questioning whether/when Apache Spark is needed (Monte Carlo uncertainty quantification). |
+| [decisions/REDPANDA.md](decisions/REDPANDA.md) | You wonder why the Kafka broker is Redpanda, and why messages are kept for only an hour. |
+| [decisions/MANAGED_POSTGRESQL.md](decisions/MANAGED_POSTGRESQL.md) | You wonder why the public server uses UpCloud Managed PostgreSQL instead of the database container. |
+| [decisions/MONITORING.md](decisions/MONITORING.md) | You wonder how the demo is monitored (Grafana alerts + host check with healthchecks.io) and what was rejected. |
 
 ## Archive — *"How did we get here?"*
 
-[archive/](archive/README.md) keeps historical documents (a debugging record, the timeline fact-check checklist, the SGPS flux derivation). Not maintained.
+[archive/](archive/README.md) keeps historical documents (a debugging record, the timeline fact-check checklist, the SGPS flux derivation, the full Spark analysis). Not maintained.
 
 ## Other repo docs (not in this folder)
 

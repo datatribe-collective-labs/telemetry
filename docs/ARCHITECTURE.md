@@ -94,7 +94,8 @@ frame, HAPI parameter order and fill values) are in [`CLAUDE.md`](../CLAUDE.md).
 data/oem/ --> physics_models (tick) --> Kafka topics --> consumer --> TimescaleDB --> backend --> dashboard
 ```
 
-On every tick (1 Hz; `TIME_SCALE` and `START_MET` speed up or skip the replay, see
+On every tick (1 Hz; `PHYSICS_MODELS_TIME_SCALE` and `PHYSICS_MODELS_START_MET_SECONDS`
+speed up or skip the replay, see
 [`RUN_SERVICES.md`](../RUN_SERVICES.md)), `physics_models.runner`:
 
 1. interpolates Orion's state from the NASA OEM arcs (state engine),
@@ -130,7 +131,7 @@ The five ODCS contracts in `packages/contracts/src/odcs/` (`01_state_engine` to
 rules. The Pydantic models in `contracts.models` follow them, so the same field names run
 from the simulator through Kafka, the database columns and the JSON API to the dashboard.
 All names are lowercase snake_case. Model-by-model compliance:
-[`integration/PHYSICS_MODELS_CONTRACT_COMPLIANCE.md`](integration/PHYSICS_MODELS_CONTRACT_COMPLIANCE.md).
+[`integration/CONTRACT_COMPLIANCE.md`](integration/CONTRACT_COMPLIANCE.md).
 
 ## Design decisions
 
