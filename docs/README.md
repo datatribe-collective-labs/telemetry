@@ -27,7 +27,8 @@ For *running* the services, see the root [`RUN_SERVICES.md`](../RUN_SERVICES.md)
 
 | Doc | Read this when… |
 |-----|-----------------|
-| [guides/UPCLOUD_DEPLOYMENT.md](guides/UPCLOUD_DEPLOYMENT.md) | You're putting the demo on a server: the UpCloud runbook (server, firewall, `.env`, first deploy, operations, recovery). |
+| [guides/UPCLOUD_DEPLOYMENT.md](guides/UPCLOUD_DEPLOYMENT.md) | You're putting the demo on a server: the UpCloud runbook (server, firewall, database, `.env`, first deploy, operations, recovery, shutdown). |
+| [guides/MONITORING.md](guides/MONITORING.md) | You're setting up or answering the demo's alerts: Grafana ops dashboard and email alerts, the host check (healthchecks.io), what to do when an alert arrives, planned restarts, drills. |
 
 ## Decisions — *"Why did we choose X?"*
 

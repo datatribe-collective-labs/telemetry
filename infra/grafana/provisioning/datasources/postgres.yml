@@ -1,4 +1,4 @@
-# Grafana datasources (read-only database user, see docs/guides/UPCLOUD_DEPLOYMENT.md).
+# Grafana datasources (read-only database user, see docs/guides/MONITORING.md).
 # $VARS come from the grafana service's environment in docker-compose.yml.
 apiVersion: 1
 

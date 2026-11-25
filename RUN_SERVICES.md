@@ -30,71 +30,36 @@ backend and dashboard natively (steps 6-7) while working on their code.
 
 ## Production: public server (`docker-compose.prod.yml`)
 
-Step by step on UpCloud (server, firewall, `.env`, first deploy, operations):
-[`docs/guides/UPCLOUD_DEPLOYMENT.md`](docs/guides/UPCLOUD_DEPLOYMENT.md).
+The server runbook (UpCloud: server, firewall, `.env`, first deploy, operations) is
+[`docs/guides/UPCLOUD_DEPLOYMENT.md`](docs/guides/UPCLOUD_DEPLOYMENT.md); its monitoring
+(Grafana alerts, host check) is [`docs/guides/MONITORING.md`](docs/guides/MONITORING.md).
 
-`docker-compose.yml` is the laptop setup: it publishes the database (5433), Kafka
-(9092), backend (8000) and dashboard (8501) on every interface. On a public server
-that would put all of them on the internet, and **a host firewall (ufw) doesn't help**:
-Docker writes its own iptables rules, so a published port is reachable anyway.
+`docker-compose.yml` is the laptop setup: it publishes the database (5433), Kafka (9092),
+backend (8000) and dashboard (8501) on every interface. On a public server that would put
+all of them on the internet, and **a host firewall (ufw) doesn't help**: Docker writes its
+own iptables rules, so a published port is reachable anyway. Files layered on top:
 
-`docker-compose.prod.yml` is layered on top and changes only what production needs:
-- **Caddy is the only public service** (ports 80/443). It serves the dashboard over
-  HTTPS at `PUBLIC_HOSTNAME`, gets and renews the certificate itself, and redirects
-  HTTP to HTTPS (`infra/caddy/Caddyfile`). Every other port is removed; the Airflow UI
-  stays on `127.0.0.1:8080`, reached over `ssh -L 8080:localhost:8080 <server>`.
-- `restart: unless-stopped` on the long-running services (back after a crash or reboot),
-  memory limits sized for an 8 GB server, log rotation (10 MB x 3 files per container).
-- The simulator runs the demo replay: from MET 12300 at x60, looping at the end of the
-  NASA trajectory data (see "Demo Replay Controls"; each can be overridden in `.env`).
+| File | Changes |
+|------|---------|
+| `docker-compose.prod.yml` | **Caddy is the only public service** (80/443, HTTPS for `PUBLIC_HOSTNAME`, `infra/caddy/Caddyfile`); every other port is removed, the Airflow UI stays on `127.0.0.1:8080`. Restart policies, memory limits, log rotation, and the demo replay (from MET 12300 at x60, looping) |
+| `docker-compose.managed-db.yml` | Every service connects to `POSTGRES_HOST` / `POSTGRES_PORT` / `POSTGRES_SSLMODE` (UpCloud Managed PostgreSQL) and the `timescaledb` container isn't started. Without it the defaults are the container (`timescaledb:5432`, `sslmode=prefer`) |
+| `docker-compose.grafana.yml` | Grafana "Telemetry ops" dashboard and email alerts on `127.0.0.1:3000`, provisioned from `infra/grafana/` |
 
+Grafana on a laptop: it needs a database user and SMTP settings, but any values will do
+(sending then just fails in the log):
 ```bash
-# .env on the server, in addition to the POSTGRES_* variables (see .env.example):
-#   PUBLIC_HOSTNAME=95-111-22-33.sslip.io     # the server IP with dashes + .sslip.io
-#   AIRFLOW_ADMIN_PASSWORD / AIRFLOW_JWT_SECRET / POSTGRES_PASSWORD: long random values
-#   (the prod file refuses to start without the two AIRFLOW_* ones)
-docker compose -f docker-compose.yml -f docker-compose.prod.yml --profile airflow up -d --build
-# Open https://<PUBLIC_HOSTNAME>
+GRAFANA_ADMIN_PASSWORD=admin GRAFANA_DB_USER=$POSTGRES_USER GRAFANA_DB_PASSWORD=$POSTGRES_PASSWORD GRAFANA_SMTP_USER=none GRAFANA_SMTP_PASSWORD=none GRAFANA_ALERT_EMAIL=none@example.invalid   docker compose -f docker-compose.yml -f docker-compose.grafana.yml up -d grafana
 ```
 
-**External database** (UpCloud Managed PostgreSQL, #46): add `docker-compose.managed-db.yml`
-as a third file and set `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_SSLMODE=require` and the
-database's credentials in `.env`. Every service then connects there (the migrations create
-the TimescaleDB extension and Airflow its `airflow` database), and the `timescaledb`
-container isn't started. Without the file, nothing changes: the defaults are the container
-(`timescaledb:5432`, `sslmode=prefer`).
-
-**Ops dashboard** (Grafana, #46): `docker-compose.grafana.yml` is another opt-in file: one
-read-only "Telemetry ops" dashboard (status row, mission data checks, data freshness, Airflow
-runs, row counts) and email alerts, provisioned
-from `infra/grafana/`, on `127.0.0.1:3000`. It needs `GRAFANA_ADMIN_PASSWORD`,
-`GRAFANA_DB_USER` and `GRAFANA_DB_PASSWORD` (a read-only user on the server; on a laptop the
-`POSTGRES_*` user is fine), and `GRAFANA_SMTP_USER`, `GRAFANA_SMTP_PASSWORD` and
-`GRAFANA_ALERT_EMAIL` for the alerts (set up in `docs/guides/UPCLOUD_DEPLOYMENT.md`; on a
-laptop any value will do, sending then just fails in the log):
-```bash
-GRAFANA_ADMIN_PASSWORD=admin GRAFANA_DB_USER=$POSTGRES_USER GRAFANA_DB_PASSWORD=$POSTGRES_PASSWORD \
-GRAFANA_SMTP_USER=none GRAFANA_SMTP_PASSWORD=none GRAFANA_ALERT_EMAIL=none@example.invalid \
-  docker compose -f docker-compose.yml -f docker-compose.grafana.yml up -d grafana
-```
-
-No domain needed: [sslip.io](https://sslip.io) resolves `95-111-22-33.sslip.io` to
-`95.111.22.33`, so Let's Encrypt can issue a real certificate for it. Moving to a real
-domain later is a change of `PUBLIC_HOSTNAME` (plus a DNS record). The `caddy_data`
-volume holds the certificates: keep it, or repeated re-issuing hits Let's Encrypt's
-rate limits.
-
-Try it locally with `PUBLIC_HOSTNAME=localhost` (Caddy then uses its own local CA, so the
-browser shows a certificate warning), as a separate project so it shares no containers
-or volumes with the dev stack:
+Try the production setup locally with `PUBLIC_HOSTNAME=localhost` (Caddy then uses its own
+local CA, so the browser shows a certificate warning), as a separate project so it shares
+no containers or volumes with the dev stack:
 ```bash
 # The prod file requires the Airflow secrets; throwaway values are fine for this check
 export PUBLIC_HOSTNAME=localhost AIRFLOW_JWT_SECRET=local-check AIRFLOW_ADMIN_PASSWORD=local-check
-docker compose -p telemetry-prod-check \
-  -f docker-compose.yml -f docker-compose.prod.yml --profile airflow up -d --build --wait
+docker compose -p telemetry-prod-check   -f docker-compose.yml -f docker-compose.prod.yml --profile airflow up -d --build --wait
 # https://localhost works; 5433, 9092, 8000 and 8501 are refused
-docker compose -p telemetry-prod-check \
-  -f docker-compose.yml -f docker-compose.prod.yml --profile airflow down -v
+docker compose -p telemetry-prod-check   -f docker-compose.yml -f docker-compose.prod.yml --profile airflow down -v
 ```
 
 ## Service Startup Order
@@ -170,8 +135,8 @@ volume). The DAG unit tests need Airflow, so they run in its image:
 
 ### 4. Synthetic data — physics models (Docker) produce telemetry to Kafka
 ```bash
-# Build and start (produces to 4 Kafka topics: trajectory, telemetry, cross_model_state, ml_features;
-# the `events` topic is reserved for the anomaly detector, not yet implemented)
+# Build and start. Each tick goes to the trajectory, telemetry, cross_model_state and
+# ml_features topics; `events` stays empty (the anomaly detector is a placeholder)
 docker compose up -d --build --force-recreate physics_models
 
 # Demo tip: the simulated Orion only moves once NASA's OEM trajectory data starts
@@ -181,7 +146,7 @@ docker compose up -d --build --force-recreate physics_models
 #   PHYSICS_MODELS_START_MET_SECONDS=12300 PHYSICS_MODELS_TIME_SCALE=60 docker compose up -d --force-recreate physics_models
 
 # Verify it's producing (producer logs may not appear due to Docker stdout buffering)
-docker exec telemetry-redpanda-1 rpk topic consume telemetry --num 5
+docker compose exec redpanda rpk topic consume telemetry --num 5
 ```
 
 ### 5. Synthetic data — consumer (Docker) writes Kafka → TimescaleDB
@@ -198,7 +163,7 @@ In Docker: `docker compose up -d --build backend` (starts `migrate` first).
 Natively, for working on the backend code: stop the container first
 (`docker compose stop backend dashboard`, they share the ports), then from the **repo root**:
 ```bash
-# Runs FastAPI with 28 REST endpoints for real + synthetic data.
+# Runs FastAPI with 29 REST endpoints for real + synthetic data.
 # BACKEND_RELOAD=1 turns on auto-reload (off by default: a dead reloader can leave
 # its worker holding port 8000).
 uv run --package backend python -m backend.main
@@ -253,11 +218,11 @@ wall clock; three knobs control in-mission speed, offset and looping (also in
 # ×300 acceleration (mission day 5 reached in ~24 min)
 PHYSICS_MODELS_TIME_SCALE=300 docker compose up -d --force-recreate physics_models
 
-# Seek to lunar close approach (MET 5d 1h 23m = 433,800 s), then watch at real-time
-PHYSICS_MODELS_START_MET_SECONDS=433800 docker compose up -d --force-recreate physics_models
+# Seek to lunar close approach (MET 5d 1h 23m = 436,980 s), then watch at real-time
+PHYSICS_MODELS_START_MET_SECONDS=436980 docker compose up -d --force-recreate physics_models
 
 # Both at once: flyby starts ~now, running fast
-PHYSICS_MODELS_TIME_SCALE=300 PHYSICS_MODELS_START_MET_SECONDS=430000 docker compose up -d --force-recreate physics_models
+PHYSICS_MODELS_TIME_SCALE=300 PHYSICS_MODELS_START_MET_SECONDS=433000 docker compose up -d --force-recreate physics_models
 
 # Loop: at the end of the NASA trajectory data (atmospheric entry, Apr 10 23:53 UTC)
 # start over from START_MET_SECONDS instead of holding Orion there forever
@@ -269,8 +234,8 @@ docker compose up -d --force-recreate physics_models
 **Looping** (on in production, `docker-compose.prod.yml`: start 12300, ×60, so one loop
 of the flight takes ~3.5 h) restarts on exactly the same sim timestamps, so the
 consumer's upsert overwrites the previous loop's rows: the synthetic tables stay at
-one mission's worth of rows however long the demo runs. Thermal and power start fresh
-on each loop. Without it, the simulator keeps writing new timestamps after entry, with
+one mission's worth of rows however long the demo runs. The models and the coupling bus start
+fresh on each loop. Without it, the simulator keeps writing new timestamps after entry, with
 Orion frozen at the last point.
 Thermal/power dynamics scale with sim time (heater cycles, SOC curves stay physically
 meaningful); dashboards just plot the sim timestamps — nothing to change there.
@@ -293,7 +258,7 @@ first point, so position and distance from Earth do not change. Start at
 `PHYSICS_MODELS_START_MET_SECONDS=12300` or later to see Orion move immediately.
 
 Reference METs (official timeline): ICPS Sep 0/03:24 (12,240 s) · TLI ~1/01:37 (92,220 s) ·
-Lunar SOI entry 4/06:59 · close approach 5/01:23:20 (433,400 s) · splashdown 9/01:46.
+Lunar SOI entry 4/06:59 · close approach 5/01:23:20 (437,000 s) · splashdown 9/01:46.
 
 ## Stopping Services
 
@@ -344,12 +309,10 @@ Get-NetTCPConnection -LocalPort 8000,8501 -State Listen
 ## Troubleshooting
 | Issue | Fix |
 |-------|-----|
-| Backend 404 on `/telemetry/real/*` | Use correct paths: `/orion`, `/iswa-goes-protons`, `/donki`, `/dsn-geometry` |
 | Dashboard can't connect to backend | Ensure the backend is running (`docker compose ps backend`, or the native one on `localhost:8000`); the error names the URL tried, set by `BACKEND_URL` |
 | Backend/consumer never start, `migrate` exited non-zero | `docker compose logs migrate` (usually the DB credentials in `.env`) |
 | `Bind for 0.0.0.0:8000 failed: port is already allocated` | A native backend/dashboard is still running; stop it (see "Stopping Services") or run only the native one |
 | No synthetic data in backend | Start the consumer: `docker compose up -d --build physics_models_consumer` (step 5); check `docker compose logs physics_models_consumer` for "Inserted" lines |
-| Old (pre-normalization) Kafka messages show mixed-case fields (e.g. `solar_flux_W_m2`) | Historical junk from old runs; new messages are lowercase (`solar_flux_w_m2`). Consume from end (`-o end`) to verify |
 | Redpanda connection refused | `docker compose restart redpanda` then wait for health check |
 | `ModuleNotFoundError` (`contracts`, `httpx`, `fastapi`, ...) when starting a host service | A partial `uv sync --package <pkg>` pruned the shared `.venv`; run `uv sync --all-packages` |
 | `RuntimeError: DATABASE_URL or POSTGRES_USER, ... must be set` | Create `.env` from `.env.example` in the repo root (step 0) |
