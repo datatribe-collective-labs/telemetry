@@ -10,15 +10,15 @@ Horizons ephemeris and NASA telemetry, streamed through Kafka, validated against
 ODCS contracts in `packages/contracts/src/odcs/`, and surfaced on a dashboard.
 
 Effort #1 (the digital twin) is partially built and runnable end-to-end (see
-`RUN_SERVICES.md`, `docs/integration/PIPELINE_STATUS.md`, `docs/overview/PROJECT_OVERVIEW.md`): `packages/contracts`
+`RUN_SERVICES.md`, `docs/ARCHITECTURE.md`): `packages/contracts`
 contains Pydantic models matching the ODCS contracts; `packages/physics_models`
 generates synthetic telemetry (state engine, thermal, power, comms, radiation and packet
 assembly are implemented; anomaly/ML are still placeholders emitted by
 `runner.py`); it publishes to Redpanda (Kafka) which a consumer persists into
-TimescaleDB; `packages/backend` is a working FastAPI with 28 REST endpoints; and
+TimescaleDB; `packages/backend` is a working FastAPI with 29 REST endpoints; and
 `dashboard/src/prototype/` is a Streamlit Digital Twin v1 consuming the backend.
 Superset was dropped - the dashboard strategy is Streamlit now, Vanilla JS +
-Plotly.js later (see `docs/architecture/DASHBOARD_ARCHITECTURE.md`).
+Plotly.js later (see `docs/architecture/DASHBOARD.md`).
 
 Effort #2 (the real data path: `packages/pipelines`) is a working lightweight
 batch ETL that ingests public NASA/JPL APIs into TimescaleDB - the proven

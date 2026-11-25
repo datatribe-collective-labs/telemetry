@@ -87,7 +87,7 @@ def test_interpolate_state_clamps_outside_arc(tmp_path):
 
 
 def test_real_store_zip_loads_and_matches_documented_extremes():
-    """Integration with the real NASA OEM store committed in docs/overview/."""
+    """Integration with the real NASA OEM store committed in data/oem/."""
     from pathlib import Path
 
     store = Path("data/oem/all-artemis-ii-oem-files.zip")

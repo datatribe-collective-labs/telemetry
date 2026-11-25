@@ -7,7 +7,7 @@ The project's one dashboard for the Artemis II / Orion digital twin: **synthetic
 (`docs/decisions/ONE_DASHBOARD.md`).
 
 Strategy: Streamlit now, a Vanilla JS + Plotly.js "Mission Control" later (see
-`docs/architecture/DASHBOARD_ARCHITECTURE.md`).
+`docs/architecture/DASHBOARD.md`).
 
 ## `src/prototype/` - Streamlit Digital Twin dashboard (v1)
 
@@ -41,7 +41,7 @@ Shared helpers (`views/_*.py`): `_controls` (sidebar, mission constants),
 (shading intervals, line breaks at replay jumps), `_status` (plain-language
 states), `_live` (refresh interval, current producer run).
 
-Design notes: `docs/architecture/DASHBOARD_V1_DESIGN.md`.
+Architecture and design decisions: `docs/architecture/DASHBOARD.md`.
 
 ### Run
 
