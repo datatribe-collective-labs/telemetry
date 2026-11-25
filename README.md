@@ -137,5 +137,5 @@ A real data source flows ingest -> TimescaleDB -> backend -> dashboard:
 
 [`RUN_SERVICES.md`](RUN_SERVICES.md) (startup, replay controls, troubleshooting) ·
 [`docs/README.md`](docs/README.md) (documentation index) ·
-[`packages/backend/README.md`](packages/backend/README.md) (API reference) ·
+[`packages/backend/README.md`](packages/backend/README.md) (API endpoints) ·
 [`docs/decisions/ONE_DASHBOARD.md`](docs/decisions/ONE_DASHBOARD.md) (why one dashboard)

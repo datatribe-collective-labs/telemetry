@@ -1,241 +1,108 @@
-# Backend API
+# backend
 
-Telemetry API for the Artemis II / Orion Digital Twin project. Provides REST endpoints for querying both real NASA/JPL data sources and synthetic telemetry from physics models.
+The FastAPI REST API that serves every table, real and synthetic, to the Digital Twin
+dashboard. It only reads: ingest jobs and the Kafka consumer do the writing. Where it sits:
+[`docs/ARCHITECTURE.md`](../../docs/ARCHITECTURE.md).
 
-## Quick Start
-
-```bash
-# Install dependencies
-uv sync
-
-# Run development server
-uv run --package backend uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload
-
-# Run tests
-uv run --package backend pytest tests/unit/backend -v
-
-# Check schema drift
-uv run --package backend alembic check
-```
-
-## Architecture
-
-```
-packages/backend/
-├── alembic/                 # Database migrations (Alembic + TimescaleDB)
-├── src/
-│   └── backend/
-│       ├── api/
-│       │   ├── routes/      # FastAPI route modules
-│       │   │   ├── close_approaches.py
-│       │   │   ├── donki.py
-│       │   │   ├── health.py
-│       │   │   ├── iswa_goes_protons.py
-│       │   │   ├── jpl_dsn_geometry.py
-│       │   │   ├── orion.py
-│       │   │   └── synthetic.py
-│       │   └── __init__.py  # FastAPI app factory
-│       ├── db/
-│       │   ├── __init__.py
-│       │   └── session.py   # SQLAlchemy session management
-│       ├── models.py        # SQLAlchemy ORM models (all 12 tables)
-│       └── main.py
-└── pyproject.toml
-```
-
-## Data Sources
-
-### Real Data (JPL/NASA/CCMC)
-
-| Endpoint | Table | Description | Time Column |
-|----------|-------|-------------|-------------|
-| `/close-approaches` | `close_approaches` | JPL CAD near-Earth object data | `close_approach_time` |
-| `/orion` | `orion_ephemeris` | JPL Horizons Orion ephemeris | `epoch` |
-| `/donki` | `donki_events` | NASA DONKI space weather events | `event_time`/`start_time` |
-| `/iswa-goes-protons` | `goes_integral_protons` | CCMC iSWA GOES proton flux (HAPI) | `time` |
-| `/dsn-geometry` | `dsn_site_geometry` | JPL Horizons DSN look angles for Orion | `epoch` |
-
-### Synthetic Telemetry (Physics Models)
-
-| Endpoint | Table | Description |
-|----------|-------|-------------|
-| `/telemetry/synthetic/state` | `state_snapshot` | State engine snapshot |
-| `/telemetry/synthetic/thermal` | `thermal_output` | Thermal model |
-| `/telemetry/synthetic/power` | `power_output` | Power model |
-| `/telemetry/synthetic/comms` | `comms_output` | Communications model |
-| `/telemetry/synthetic/radiation` | `radiation_output` | Radiation model |
-| `/telemetry/synthetic/cross-model` | `cross_model_state` | Cross-model coupling bus |
-| `/telemetry/synthetic/packet` | `telemetry_packet` | Combined telemetry packet |
-| `/telemetry/synthetic/anomalies` | `anomaly_events` | Anomaly detection events |
-| `/telemetry/synthetic/ml-features` | `ml_feature_vectors` | ML feature vectors |
-| `/telemetry/synthetic/latest` | `telemetry_packet` | Latest telemetry packet |
-
-All synthetic endpoints support: `date_from`, `date_to`, `limit`, `offset`
-
-## API Documentation
-
-- Swagger UI: `http://localhost:8000/docs`
-- ReDoc: `http://localhost:8000/redoc`
-- OpenAPI JSON: `http://localhost:8000/openapi.json`
-
-## Database
-
-### Schema Management
-
-All 12 tables are managed by **Alembic** as the single authoritative mechanism:
+## Run
 
 ```bash
-# Check for schema drift
-alembic check
+# In Docker (starts `migrate` first): http://localhost:8000/docs
+docker compose up -d --build backend
 
-# Generate migration
-alembic revision --autogenerate -m "description"
-
-# Apply migrations
-alembic upgrade head
-
-# View history
-alembic history --verbose
+# Natively, from the repo root (stop the container first: they share port 8000)
+uv run --package backend python -m backend.main      # BACKEND_RELOAD=1 for auto-reload
 ```
 
-### TimescaleDB Hypertables
+Connection settings come from the environment, or from the repo root `.env`:
+`DATABASE_URL`, or else `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` on
+`localhost:5433`. In Docker, compose sets `DATABASE_URL` to the database service.
 
-11 of 12 tables are TimescaleDB hypertables (all except `donki_events`):
+## Endpoints
 
-```python
-# In alembic/env.py - HYPERTABLES dict
-HYPERTABLES = {
-    # Synthetic (timestamp_utc)
-    "state_snapshot": "timestamp_utc",
-    ...
-    # Real-data hypertables (different time dimensions)
-    "close_approaches": "close_approach_time",
-    "orion_ephemeris": "epoch",
-    "goes_integral_protons": "time",
-    "dsn_site_geometry": "epoch",
-}
-```
+29 GET endpoints. The parameters and response models of each are on the live OpenAPI
+page, http://localhost:8000/docs. Responses are the `contracts.models` Pydantic models.
+Paged list endpoints return at most 1,000 rows per request (`limit`, `offset`) along with
+the `total` row count.
 
-The `process_revision_directives` hook in `alembic/env.py` automatically injects `CREATE EXTENSION IF NOT EXISTS timescaledb` and `create_hypertable()` calls after each table creation.
+**Health**
 
-### Models
-
-SQLAlchemy 2.x declarative models in `src/backend/models.py`:
-
-- **Synthetic tables** (9): lowercase snake_case columns, `timestamp_utc` PK
-- **Real-data tables** (3 original + 2 new): preserve existing column names, types, PKs, indexes
-
-```python
-from backend.models import Base, StateSnapshot, GoesIntegralProtons, DsnSiteGeometry, ...
-```
-
-## Testing
-
-### Unit Tests (No Database Required)
-
-```bash
-# All backend unit tests
-uv run --package backend pytest tests/unit/backend -v
-
-# Specific module
-uv run --package backend pytest tests/unit/backend/api/routes/synthetic -v
-
-# With coverage
-uv run --package backend pytest tests/unit/backend --cov=backend --cov-report=term-missing
-```
-
-Tests use a **fake session** pattern that records SQL and returns mock results:
-- `fake_session` - Records executed SQL and params
-- `client` - FastAPI TestClient with `get_db` overridden
-- `row_factory` / `result_factory` - Create mock rows/results
-
-### Integration Tests (Require Database)
-
-```bash
-# Requires docker compose up
-uv run pytest tests/integration -v
-```
-
-## Environment
-
-```bash
-# Required
-DATABASE_URL=postgresql://user:pass@host:5433/db
-
-# Optional (defaults shown)
-ISWA_HAPI_BASE_URL=https://iswa.gsfc.nasa.gov/IswaSystemWebApp/hapi
-JPL_HORIZONS_BASE_URL=https://ssd.jpl.nasa.gov/api/horizons.api
-GOES_PROTONS_START=2026-04-01T00:00:00Z
-GOES_PROTONS_END=2026-04-12T00:00:00Z
-HORIZONS_COMMAND=-1024
-HORIZONS_START=2026-04-02 02:00
-HORIZONS_STOP=2026-04-10 23:00
-HORIZONS_STEP=1 h
-```
-
-## Common Patterns
-
-### Adding a New Real-Data Endpoint
-
-1. Add Pydantic model to `packages/contracts/src/contracts/models.py`
-2. Export from `packages/contracts/src/contracts/__init__.py`
-3. Create route module in `src/backend/api/routes/`
-4. Register router in `src/backend/api/__init__.py`
-5. Add SQLAlchemy model to `src/backend/models.py`
-6. Add to `HYPERTABLES` in `alembic/env.py` if hypertable
-7. Create unit tests in `tests/unit/backend/api/routes/`
-8. Run `alembic revision --autogenerate` and verify empty migration
-9. Run tests
-
-### Adding a New Synthetic Telemetry Endpoint
-
-1. Follow same steps as real-data
-2. Use `timestamp_utc` as time column
-3. Add to `SYNTHETIC_TABLES` in `alembic/env.py` (also in `HYPERTABLES`)
-4. Use `_select_columns()` helper in route for contract-preserving SELECT aliases
-
-### Column Naming Conventions
-
-- **Database**: lowercase snake_case (synthetic) / original case (real-data)
-- **API/Contracts**: Original field names (e.g., `temp_sun_face_K`, `eirp_dBW`)
-- **Translation**: Route uses `lower_db_col AS "ContractName"` in SELECT
-
-## Dependencies
-
-Core:
-- FastAPI 0.142+
-- SQLAlchemy 2.0+
-- psycopg 3.3+
-- Alembic 1.20+
-- Pydantic 2+
-
-Development:
-- pytest 9+
-- pytest-xdist
-
-## CI/CD
-
-```bash
-# Lint
-uv run ruff check packages/backend
-
-# Type check
-uv run mypy packages/backend
-
-# Test
-uv run --package backend pytest tests/unit/backend -q
-
-# Schema drift check
-uv run --package backend alembic check
-```
-
-## Files of Interest
-
-| File | Purpose |
+| Path | Returns |
 |------|---------|
-| `alembic/env.py` | Custom Alembic config with hypertable injection hook |
-| `src/backend/models.py` | All 12 SQLAlchemy ORM models |
-| `src/backend/api/routes/synthetic.py` | Synthetic telemetry endpoints (largest) |
-| `src/backend/api/__init__.py` | FastAPI app with all routers |
-| `tests/unit/backend/api/routes/conftest.py` | Shared test fixtures |
-| `packages/contracts/src/contracts/models.py` | All Pydantic contracts |
+| `/health` | The API is up |
+| `/health/db` | The API can reach the database |
+
+**Real data** (one route module per source, filters by time window)
+
+| Path | Table | Extra filters |
+|------|-------|---------------|
+| `/orion`, `/orion/{target_id}/{epoch}` | `orion_ephemeris` | `target_id` |
+| `/moon` | `moon_ephemeris` | - |
+| `/oem`, `/oem/arcs` | `oem_state_vectors` | `arc_id` (latest arc by default) |
+| `/mission-events` | `mission_events` | `met_from_s`, `met_to_s`, `mode` (by mission elapsed time) |
+| `/dsn-geometry`, `/dsn-geometry/{target_id}/{site}/{epoch}` | `dsn_site_geometry` | `site`, `complex`, `visible_only` |
+| `/donki`, `/donki/event-types`, `/donki/{event_type}/{event_id}` | `donki_events` | `event_types` |
+| `/iswa-goes-protons`, `/iswa-goes-protons/{time}` | `goes_integral_protons` | - |
+| `/close-approaches`, `/close-approaches/{des}/{orbit_id}/{close_approach_time}` | `close_approaches` | `dist_max_au`, `designation` |
+
+**Synthetic data** (`/telemetry/synthetic/...`, all in `routes/synthetic.py`)
+
+| Path | Table | Extra filters |
+|------|-------|---------------|
+| `/state`, `/state/{timestamp_utc}` | `state_snapshot` | - |
+| `/thermal` | `thermal_output` | `thermal_state` |
+| `/power` | `power_output` | `power_state` |
+| `/comms` | `comms_output` | `comm_state` |
+| `/radiation` | `radiation_output` | `sep_event_active` |
+| `/cross-model` | `cross_model_state` | - |
+| `/packet`, `/packet/{timestamp_utc}` | `telemetry_packet` | `all_nominal`, `thermal_state`, `power_state`, `comm_state` |
+| `/latest` | `telemetry_packet` | the most recently written packet |
+| `/anomalies` | `anomaly_events` (placeholder, empty) | `anomaly_type`, `detection_layer`, `severity`, `mission_phase` |
+| `/ml-features` | `ml_feature_vectors` (placeholder values) | - |
+
+The synthetic list endpoints also take `sort_by=timestamp_utc|ingested_at` and
+`order=asc|desc`. `sort_by=ingested_at&order=desc` gives the rows written most recently,
+which is how the dashboard follows the current run after a replay restarts or loops.
+
+## Database schema
+
+- **Synthetic tables:** created by the Alembic migrations in `alembic/versions/` (nine
+  hypertables keyed on `timestamp_utc`, with an `ingested_at` column). In Docker the
+  one-shot `migrate` service runs `alembic upgrade head` before the consumer and backend
+  start. Natively: `cd packages/backend && uv run --package backend alembic upgrade head`.
+  `alembic/env.py` adds the `CREATE EXTENSION timescaledb` and `create_hypertable()` calls
+  to new migrations.
+- **Real-data tables:** created by their own ingest module in `packages/pipelines`.
+  `src/backend/models.py` maps five of them as ORM models. The `moon`, `oem` and
+  `mission-events` routes query their tables with plain SQL.
+
+## Key files
+
+| File | Holds |
+|------|-------|
+| `src/backend/api/__init__.py` | The FastAPI app; registers every router |
+| `src/backend/api/routes/<source>.py` | One module per real source, plus `synthetic.py` and `health.py` |
+| `src/backend/models.py` | SQLAlchemy models |
+| `src/backend/db/session.py` | Engine, session, connection settings |
+| `alembic/` | Migrations for the synthetic tables |
+| `Dockerfile` | The image (built from the repo root; installs only the backend and `contracts`) |
+
+## Add an endpoint
+
+For a new real-data source (the whole checklist, ingest to dashboard, is in the root
+`README.md`):
+
+1. A response model in `packages/contracts/src/contracts/models.py`.
+2. An ORM model in `src/backend/models.py` (or plain SQL in the route).
+3. A route module in `src/backend/api/routes/<source>.py`, registered in
+   `src/backend/api/__init__.py`.
+4. Unit tests under `tests/unit/backend/api/routes/`.
+
+## Tests
+
+```bash
+uv run pytest tests/unit/backend        # no database: routes run against a fake session
+```
+
+The fixtures (`fake_session`, `client`, row and result factories) are in
+`tests/unit/backend/api/routes/conftest.py`.
