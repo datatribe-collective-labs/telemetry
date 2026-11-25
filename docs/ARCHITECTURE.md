@@ -61,7 +61,7 @@ Two rules hold everywhere:
 | Message bus | Redpanda | Kafka-compatible broker | container `redpanda` |
 | Database | TimescaleDB (PostgreSQL) | Every table, as hypertables. Host port **5433** | container `timescaledb`, or managed PostgreSQL |
 | Migrations | `packages/backend/alembic/` | Schema of the synthetic tables | one-shot container `migrate` |
-| Backend | `packages/backend/` | FastAPI REST API, 29 GET endpoints ([API reference](../packages/backend/src/backend/api/README.md)) | container `backend`, port 8000 |
+| Backend | `packages/backend/` | FastAPI REST API, 29 GET endpoints ([endpoints](../packages/backend/README.md)) | container `backend`, port 8000 |
 | Dashboard | `dashboard/src/prototype/` | The Digital Twin dashboard, five pages ([dashboard architecture](architecture/DASHBOARD.md)) | container `dashboard`, port 8501 |
 | Ops monitoring | `infra/grafana/`, `infra/hostcheck/` | Grafana "Telemetry ops" dashboard and email alerts; a host check for disk, containers and the public site | opt-in compose file; deploy user's crontab |
 | Reverse proxy | `infra/caddy/` | HTTPS for the public server | `docker-compose.prod.yml` only |

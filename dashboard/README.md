@@ -6,8 +6,7 @@ The project's one dashboard for the Artemis II / Orion digital twin: **synthetic
 `README.md`. It replaced the earlier real-data-only Data Explorer
 (`docs/decisions/ONE_DASHBOARD.md`).
 
-Strategy: Streamlit now, a Vanilla JS + Plotly.js "Mission Control" later (see
-`docs/architecture/DASHBOARD.md`).
+Architecture and design decisions: [`docs/architecture/DASHBOARD.md`](../docs/architecture/DASHBOARD.md).
 
 ## `src/prototype/` - Streamlit Digital Twin dashboard (v1)
 
@@ -16,18 +15,16 @@ Consumes the FastAPI backend (`packages/backend`) at `$BACKEND_URL` (default
 the `contracts` Pydantic models.
 It does not query the database directly.
 
-Written for non-experts first: four pages, each answering one question, with
+Written for non-experts first: five pages, each answering one question, with
 one shared sidebar (a **Live** toggle, or a mission-time slider when Live is off).
 
 | Page | Question it answers | Synthetic data | Real data |
 |------|---------------------|----------------|-----------|
-| Mission | Where is Orion, and is it OK? | trajectory, thermal/power state | JPL Horizons Orion trajectory |
+| Mission | Where is Orion, and is it OK? | trajectory, system status, radio link | JPL Horizons Orion trajectory and Moon, mission timeline |
 | Spacecraft health | Is it warm enough, and does it have power? | thermal, power, eclipse | - |
+| Radiation journey | What did the flight expose the cabin to, and why? | dose at one cabin sensor, by source and mission stage | GOES protons |
 | Space environment | What is space around it like; can we talk to it, and how long does a signal take? | - | GOES protons, DONKI events, DSN geometry |
 | Model accuracy (for engineers) | Does the simulation match reality? | trajectory | JPL Horizons Orion trajectory |
-
-The dashboard does not show the simulated comms and radiation yet (#79), so the Mission
-page shows them as grey "Not simulated yet" tiles instead of a status.
 
 Every chart carries data-source badges (**Real** / **Synthetic** / **Placeholder**),
 a one-line plain-language summary and an "About this chart" expander. All three
@@ -39,9 +36,9 @@ Shared helpers (`views/_*.py`): `_controls` (sidebar, mission constants),
 `_data` (cached fetches that page through the backend's 1,000-row limit),
 `_trajectory` (map, readout, real-vs-simulated separation), `_timeline`
 (shading intervals, line breaks at replay jumps), `_status` (plain-language
-states), `_live` (refresh interval, current producer run).
-
-Architecture and design decisions: `docs/architecture/DASHBOARD.md`.
+states), `_live` (refresh interval, current producer run), `_phases` (mission
+phases), `_link` (radio link gaps), `_radiation` (dose charts), `_blackout` (the
+lunar flyby blackout).
 
 ### Run
 

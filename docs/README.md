@@ -49,4 +49,4 @@ For *running* the services, see the root [`RUN_SERVICES.md`](../RUN_SERVICES.md)
 - [`../README.md`](../README.md) — project quickstart
 - [`../RUN_SERVICES.md`](../RUN_SERVICES.md) — service startup order & troubleshooting
 - [`../CLAUDE.md`](../CLAUDE.md) — agent guidance for working in this repo
-- `packages/*/README.md`, `dashboard/README.md` — per-package docs (backend API reference: `packages/backend/src/backend/api/README.md`)
+- `packages/*/README.md`, `dashboard/README.md`, `airflow/README.md`, `infra/README.md` — per-package docs: what each part is, how to run and test it (backend endpoints: `packages/backend/README.md`)
