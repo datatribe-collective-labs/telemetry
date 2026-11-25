@@ -1,6 +1,7 @@
 # Telemetry Project Documentation
 
-Start here. Docs are grouped by **type** — find the folder, then the file.
+Start here. Docs are grouped by **type**: find the folder, then the file. They describe
+what exists now; plans and progress are tracked in GitHub issues.
 For *running* the services, see the root [`RUN_SERVICES.md`](../RUN_SERVICES.md). For how **real data** (NASA/JPL) and **synthetic data** (physics models) fit together, see "Real data vs synthetic data" in the root [`README.md`](../README.md).
 
 ## Overview — *"What is this project and how does it fit together?"*
@@ -40,13 +41,27 @@ For *running* the services, see the root [`RUN_SERVICES.md`](../RUN_SERVICES.md)
 | [decisions/MANAGED_POSTGRESQL.md](decisions/MANAGED_POSTGRESQL.md) | You wonder why the public server uses UpCloud Managed PostgreSQL instead of the database container. |
 | [decisions/MONITORING.md](decisions/MONITORING.md) | You wonder how the demo is monitored (Grafana alerts + host check with healthchecks.io) and what was rejected. |
 
-## Archive — *"How did we get here?"*
+## Package READMEs — *"How do I run and test this part?"*
 
-[archive/](archive/README.md) keeps historical documents (a debugging record, the timeline fact-check checklist, the SGPS flux derivation, the full Spark analysis). Not maintained.
+| README | Part |
+|--------|------|
+| [packages/contracts](../packages/contracts/README.md) | ODCS contracts, Pydantic models, mission timeline |
+| [packages/pipelines](../packages/pipelines/README.md) | Real-data ingest jobs, one per source |
+| [packages/physics_models](../packages/physics_models/README.md) | The simulator and the Kafka consumer |
+| [packages/backend](../packages/backend/README.md) | The REST API: all 29 endpoints, migrations |
+| [dashboard](../dashboard/README.md) | The Digital Twin dashboard |
+| [airflow](../airflow/README.md) | The ingest DAGs |
+| [infra](../infra/README.md) | Caddy, Grafana, host check |
 
 ## Other repo docs (not in this folder)
 
-- [`../README.md`](../README.md) — project quickstart
-- [`../RUN_SERVICES.md`](../RUN_SERVICES.md) — service startup order & troubleshooting
+- [`../README.md`](../README.md) — what the project is, screenshots, quick start, known limits
+- [`../RUN_SERVICES.md`](../RUN_SERVICES.md) — service start-up order, replay controls, troubleshooting
 - [`../CLAUDE.md`](../CLAUDE.md) — agent guidance for working in this repo
-- `packages/*/README.md`, `dashboard/README.md`, `airflow/README.md`, `infra/README.md` — per-package docs: what each part is, how to run and test it (backend endpoints: `packages/backend/README.md`)
+- [`showcase/`](showcase/) — the README's screenshots of the dashboard and Grafana
+
+## Archive — *"How did we get here?"*
+
+[archive/](archive/README.md) keeps historical documents as they were written: a debugging
+record, the timeline fact-check checklist, the SGPS flux derivation, the full Spark analysis
+and the first backend READMEs. Not maintained, and skipped by the link-check test.

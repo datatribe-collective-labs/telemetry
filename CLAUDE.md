@@ -17,8 +17,10 @@ assembly are implemented; anomaly/ML are still placeholders emitted by
 `runner.py`); it publishes to Redpanda (Kafka) which a consumer persists into
 TimescaleDB; `packages/backend` is a working FastAPI with 29 REST endpoints; and
 `dashboard/src/prototype/` is a Streamlit Digital Twin v1 consuming the backend.
-Superset was dropped - the dashboard strategy is Streamlit now, Vanilla JS +
-Plotly.js later (see `docs/architecture/DASHBOARD.md`).
+Superset was dropped; a Vanilla JS + Plotly.js dashboard was planned but not built (see
+`docs/architecture/DASHBOARD.md`). Docs describe what exists now (index: `docs/README.md`);
+progress lives in issues. Files Eveliina wrote alone are archived to `docs/archive/`, not
+deleted.
 
 Effort #2 (the real data path: `packages/pipelines`) is a working lightweight
 batch ETL that ingests public NASA/JPL APIs into TimescaleDB - the proven
@@ -58,7 +60,8 @@ uv sync --package <backend|pipelines|contracts|physics_models|dashboard>
 # bring up local infrastructure (TimescaleDB + Redpanda)
 docker compose up -d timescaledb redpanda
 
-# run an ingest job (one module per source: jpl_cad, jpl_orion, jpl_dsn_geometry, donki, iswa_goes_protons)
+# run an ingest job (one module per source: nasa_oem, mission_events, jpl_orion, jpl_moon,
+# jpl_dsn_geometry, donki, iswa_goes_protons, jpl_cad)
 uv run --package pipelines python -m pipelines.ingest.jpl_cad
 
 # run the Digital Twin dashboard (needs the backend: uv run --package backend python -m backend.main)
@@ -83,12 +86,13 @@ mirroring the source path:
   files (which also means tests can't import each other - share helpers via
   fixtures).
 
-Unit tests exist for all pipeline ingest modules (`jpl_cad`, `donki`,
-`iswa_goes_protons`, `jpl_dsn_geometry`), plus `tests/unit/backend` (route and
-model tests), `tests/unit/physics_models` and `tests/unit/dashboard` (the
-Digital Twin dashboard's helpers; a test keeps `views/_explain.py` in sync with the
-pages) and `tests/unit/airflow` (the DAG source lists, natively; the DAGs themselves
-only in the `airflow-tests` container).
+Unit tests exist for all eight pipeline ingest modules, plus `tests/unit/backend` (route
+and model tests), `tests/unit/contracts`, `tests/unit/physics_models`,
+`tests/unit/dashboard` (the Digital Twin dashboard's helpers; a test keeps
+`views/_explain.py` in sync with the pages), `tests/unit/airflow` (the DAG source lists,
+natively; the DAGs themselves only in the `airflow-tests` container), `tests/unit/infra`
+(Grafana provisioning, host check) and `tests/unit/docs` (every relative Markdown link
+resolves; `docs/archive/` is skipped, its files are kept as written).
 
 ```
 # Docker test environment (compose service `tests`, profile "test")
