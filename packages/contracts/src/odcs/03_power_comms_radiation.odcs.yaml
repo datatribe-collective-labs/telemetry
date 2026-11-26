@@ -2,7 +2,7 @@ apiVersion: v3.1.0
 kind: DataContract
 id: 3b5c7d9e-1f2a-4b3c-9d4e-5f6a7b8c9d0e
 name: power_model_output
-version: 1.2.0
+version: 1.3.0
 status: active
 domain: spacecraft_digital_twin
 
@@ -177,31 +177,38 @@ schema:
             mustBe: 0
           - type: text
             description: >
-              Sign must be consistent with net power balance:
+              Sign must be consistent with the post-distribution net power balance:
               If solar_array_power_W × 0.92 > total_load_W → battery_current_A > 0 (charging).
               If solar_array_power_W × 0.92 < total_load_W → battery_current_A < 0 (discharging).
-              Magnitude: |battery_current_A| = |net_power_W| / battery_voltage_V.
-              At 28 V, 4,000 W load with no generation: ~−143 A discharge.
-              Values outside [−200, +200] A are implausible for Orion's battery design.
+              Before current limiting, magnitude is |net_power_W| / battery_voltage_V, using
+              the reported post-update voltage. When a model charge/discharge current limit
+              applies, battery_current_A equals that signed limit instead. Surplus above the
+              charge limit or deficit beyond the discharge limit remains represented by the
+              pre-limit net_power_W; this version does not report shunted or unserved power.
+              At 28 V, 4,000 W load with no generation: ~−143 A requested discharge before
+              current limiting. Values outside [−200, +200] A are implausible for Orion's
+              battery design.
 
       - id: net_power_w
         name: net_power_w
-        businessName: Net spacecraft electrical power before battery flow (W)
+        businessName: Net electrical power after distribution and before current limiting (W)
         logicalType: number
         physicalType: DOUBLE
         required: true
         description: >
-          Derived net power balance using all declared generation and electrical loads.
-          Positive means surplus available to charge the battery; negative means battery
-          discharge is required. Heater and communications electrical loads must be included
-          in total_load_W.
+          Derived net power balance using all declared generation, distribution losses and
+          electrical loads, before battery charge/discharge current limits. Positive means
+          surplus requested for battery charging; negative means battery discharge is
+          requested. Heater and communications electrical loads must be included in
+          total_load_W.
         quality:
           - metric: nullValues
             mustBe: 0
           - type: text
             description: >
-              Must equal solar_array_power_W minus total_load_W and any explicitly declared
-              additional electrical losses/loads. Battery-current sign must be consistent.
+              Must equal solar_array_power_W × 0.92 − total_load_W. The 0.92 distribution
+              efficiency is the declared additional electrical loss. Battery-current sign must
+              be consistent; current limiting changes only current, not this pre-limit balance.
 
       - id: available_power_w
         name: available_power_w

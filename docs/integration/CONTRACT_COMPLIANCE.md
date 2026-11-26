@@ -17,7 +17,7 @@ the simulator to the dashboard.
 |------|--------------------|----------------|-------------|-------|--------|
 | `01_state_engine` | `state_engine_snapshot` (1.1.0) | `SyntheticStateSnapshot` | `trajectory` | `state_snapshot` | Implemented; attitude angles are 0 |
 | `02_thermal_model` | `thermal_model_output` (1.1.0) | `SyntheticThermalOutput` | `telemetry` | `thermal_output` | Implemented |
-| `03_power_comms_radiation` | `power_model_output` (1.2.0) | `SyntheticPowerOutput` | `telemetry` | `power_output` | Implemented; two consistency rules open (#73) |
+| `03_power_comms_radiation` | `power_model_output` (1.3.0) | `SyntheticPowerOutput` | `telemetry` | `power_output` | Implemented |
 | `03_power_comms_radiation` | `comms_model_output` (1.2.0) | `SyntheticCommsOutput` | `telemetry` | `comms_output` | Implemented |
 | `03_power_comms_radiation` | `radiation_model_output` (1.1.0) | `SyntheticRadiationOutput` | `telemetry` | `radiation_output` | Implemented; degradation factors are 1.0 |
 | `04_cross_model_telemetry_packet` | `cross_model_state` (1.2.0) | `SyntheticCrossModelState` | `cross_model_state` | `cross_model_state` | Implemented; radiation couplings are 1.0 |
@@ -64,17 +64,13 @@ flight computer and is used as a reference, not as an Orion requirement.
 ### Power (`03`)
 
 All fields are implemented. `power_state` is set strictly from the battery charge, as the
-contract requires, and `available_power_w` is `array x 0.92 − 800 W`. Array size,
-efficiency, battery capacity and the 1,200 W load are model assumptions.
-
-**Open (#73):**
-- `net_power_w` is `array − load`, without the 0.92 distribution factor that the battery
-  current sign rule uses.
-- `|battery_current_a| = |net_power_w| / battery_voltage_v` does not hold while charging,
-  because charge current is capped at 50 A and the surplus is not reported anywhere.
-
-Neither changes the battery behaviour on the mission arc. Both need a decision on
-contract 03 first.
+contract requires. Both `available_power_w` and `net_power_w` include the 0.92 distribution
+factor: available power is `array x 0.92 − 800 W` (floored at zero), while net power is
+`array x 0.92 − load` before current limiting. Battery current uses the reported post-update
+voltage and is clamped to the model's charge/discharge limits. Contract 1.3.0 explicitly
+defines net power as the pre-limit balance; surplus above the charge limit is not reported
+as a separate shunted-power field. Array size, efficiency, battery capacity and the 1,200 W
+load are model assumptions.
 
 ### Comms (`03`)
 

@@ -191,7 +191,7 @@ class SyntheticPowerOutput(BaseModel):
     battery_soc_pct: float = Field(..., description="Battery state of charge (%)")
     battery_voltage_v: float = Field(..., description="Battery bus voltage (V)")
     battery_current_a: float = Field(..., description="Battery current (A, +charge/-discharge)")
-    net_power_w: float = Field(..., description="Net spacecraft electrical power before battery flow (W)")
+    net_power_w: float = Field(..., description="Post-distribution net power before battery current limiting (W)")
     available_power_w: float = Field(..., description="Available power headroom for non-essential loads (W)")
     power_state: Literal["NOMINAL", "BATTERY_DISCHARGE", "LOW_POWER_MODE", "CRITICAL"] = Field(..., description="Power health state")
 

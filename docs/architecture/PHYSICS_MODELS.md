@@ -75,7 +75,9 @@ on the sun face).
 Solar arrays (44.8 m², 28 % efficiency at beginning of life, temperature derated) charge a
 100 Ah, 28 V Li-ion battery. The load is a fixed 1,200 W placeholder, plus the heater when
 it is on: Orion's real load profile is not published. Available power is
-`array power x 0.92 − 800 W` (contract 03). `power_state` is set from the battery charge:
+`array power x 0.92 − 800 W`, and net power is `array power x 0.92 − load` before battery
+current limiting (contract 03). Battery current uses the reported post-update voltage and
+is clamped to the model's charge/discharge limits. `power_state` is set from the battery charge:
 `CRITICAL` at or below 10 %, `LOW_POWER_MODE` up to 20 %, `BATTERY_DISCHARGE` while the
 battery drains, otherwise `NOMINAL`.
 
