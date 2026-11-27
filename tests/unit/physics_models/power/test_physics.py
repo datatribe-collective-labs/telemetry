@@ -149,6 +149,11 @@ class TestPowerBalance:
         battery_power, _net_power = compute_power_balance(1200.0, 1200.0)
         assert battery_power == pytest.approx(0.0, abs=1e-6)
 
+    def test_distribution_efficiency_is_applied_before_battery_flow(self):
+        battery_power, net_power = compute_power_balance(2000.0, 1200.0, 0.92)
+        assert net_power == pytest.approx(640.0)
+        assert battery_power == pytest.approx(net_power)
+
 
 class TestPowerModel:
     """Test the integrated power model."""
@@ -203,6 +208,59 @@ class TestPowerModel:
         assert model.array_power_w == pytest.approx(0.0, abs=1e-3)
         assert model.battery_current_a < 0  # Discharging
         assert model.net_power_w < 0
+
+    def test_step_net_power_includes_distribution_loss(self, model):
+        model.step(
+            solar_flux=1361.0,
+            incidence_angle_deg=0.0,
+            eclipse_fraction=0.0,
+            total_load_w=1000.0,
+            dt=60.0,
+            electronics_bay_temp_k=293.15,
+        )
+        assert model.net_power_w == pytest.approx(
+            model.array_power_w * model.distribution_efficiency - model.total_load_w
+        )
+
+    def test_step_unclamped_current_uses_reported_voltage(self, model):
+        model.array_area_m2 = 1.0
+        model.step(
+            solar_flux=1000.0,
+            incidence_angle_deg=0.0,
+            eclipse_fraction=0.0,
+            total_load_w=50.0,
+            dt=60.0,
+            electronics_bay_temp_k=293.15,
+        )
+        assert abs(model.battery_current_a) < model.max_charge_current_a
+        assert abs(model.battery_current_a) == pytest.approx(
+            abs(model.net_power_w) / model.battery_voltage_v, rel=1e-9
+        )
+
+    def test_step_current_clamps_when_net_power_exceeds_charge_limit(self, model):
+        model.step(
+            solar_flux=1361.0,
+            incidence_angle_deg=0.0,
+            eclipse_fraction=0.0,
+            total_load_w=1000.0,
+            dt=60.0,
+            electronics_bay_temp_k=293.15,
+        )
+        assert model.net_power_w / model.battery_voltage_v > model.max_charge_current_a
+        assert model.battery_current_a == model.max_charge_current_a
+
+    def test_step_current_clamps_when_deficit_exceeds_discharge_limit(self, model):
+        model.max_discharge_current_a = 10.0
+        model.step(
+            solar_flux=0.0,
+            incidence_angle_deg=0.0,
+            eclipse_fraction=1.0,
+            total_load_w=1000.0,
+            dt=60.0,
+            electronics_bay_temp_k=293.15,
+        )
+        assert abs(model.net_power_w) / model.battery_voltage_v > model.max_discharge_current_a
+        assert model.battery_current_a == -model.max_discharge_current_a
 
     def test_step_at_high_incidence_angle(self, model):
         """High incidence angle reduces array power."""

@@ -157,8 +157,7 @@ limits:
   spacecraft load is a fixed 1,200 W, the comms link only uses the Deep Space Network (the
   real Orion also used the Near Space Network close to Earth), and radiation does not
   degrade the other subsystems.
-- **Open issues:** two power-contract consistency rules (#73), and value clamps that would
-  hide a `NaN` from tick validation (#91).
+- **Open issue:** value clamps that would hide a `NaN` from tick validation (#91).
 
 How each model meets its data contract: [`docs/integration/CONTRACT_COMPLIANCE.md`](docs/integration/CONTRACT_COMPLIANCE.md).
 

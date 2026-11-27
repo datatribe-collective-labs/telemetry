@@ -108,19 +108,22 @@ def compute_battery_soc(
 def compute_power_balance(
     array_power_w: float,
     load_power_w: float,
+    distribution_efficiency: float = 1.0,
 ) -> tuple[float, float]:
-    """Compute power balance.
+    """Compute the post-distribution power balance before battery current limits.
 
     Args:
-        array_power_w: Solar array power (W)
+        array_power_w: Gross solar array power (W)
         load_power_w: Total load power (W)
+        distribution_efficiency: Fraction of gross array output delivered to the bus (0-1)
 
     Returns:
-        (battery_power_w, net_power_w) where battery_power > 0 = charging.
+        (requested_battery_power_w, net_power_w), where positive values mean charging.
+        Requested battery power is not clamped to the battery's current limits.
     """
-    net_power = array_power_w - load_power_w
-    battery_power = net_power  # Battery absorbs/provides the difference
-    return battery_power, net_power
+    net_power = array_power_w * distribution_efficiency - load_power_w
+    requested_battery_power = net_power
+    return requested_battery_power, net_power
 
 
 @dataclass
@@ -164,13 +167,10 @@ class PowerModel:
     def __post_init__(self):
         self.array_efficiency = self.array_efficiency_bol
 
-    def _update_battery_voltage(self, temp_k: float = 293.15):
-        """Update battery voltage based on SOC and temperature.
-
-        Uses simplified Li-ion voltage curve:
-        V = V_nom + (SOC - 0.5) * 0.8 + (25 - T_c) * 0.02
-        """
-        soc = self.battery_soc
+    def _calculate_battery_voltage(
+        self, soc: float, current_a: float, temp_k: float
+    ) -> float:
+        """Calculate terminal voltage from SOC, current and temperature."""
         temp_c = temp_k - 273.15
 
         # Open circuit voltage vs SOC (simplified linear approximation)
@@ -182,14 +182,23 @@ class PowerModel:
         # Cold = higher voltage
         v_temp = (25.0 - temp_c) * 0.16
 
-        self.battery_voltage_v = v_ocv + v_temp
-
-        # Apply internal resistance drop under load
         # V_terminal = V_ocv - I * R_internal
-        self.battery_voltage_v -= self.battery_current_a * self.battery_resistance_ohm
+        return max(20.0, min(34.0, v_ocv + v_temp - current_a * self.battery_resistance_ohm))
 
-        # Clamp
-        self.battery_voltage_v = max(20.0, min(34.0, self.battery_voltage_v))
+    def _update_battery_voltage(self, temp_k: float = 293.15):
+        """Update battery voltage based on SOC, current and temperature."""
+        self.battery_voltage_v = self._calculate_battery_voltage(
+            self.battery_soc, self.battery_current_a, temp_k
+        )
+
+    def _limited_battery_current(self, net_power_w: float, voltage_v: float) -> float:
+        """Convert net power to battery current and apply charge/discharge limits."""
+        if voltage_v <= 1.0:
+            return 0.0
+        return max(
+            -self.max_discharge_current_a,
+            min(self.max_charge_current_a, net_power_w / voltage_v),
+        )
 
     def _update_power_state(self):
         """Classify power system state per ODCS 03 power_model_output.
@@ -264,32 +273,35 @@ class PowerModel:
             self.array_power_w, self.distribution_efficiency, self.essential_load_w
         )
 
-        # Power balance
-        self.net_power_w = self.array_power_w - total_load_w
-
-        # Battery current (simplified: all net power goes to/from battery)
-        # I = P / V
-        if abs(self.battery_voltage_v) > 1.0:
-            self.battery_current_a = self.net_power_w / self.battery_voltage_v
-        else:
-            self.battery_current_a = 0.0
-
-        # Limit current
-        self.battery_current_a = max(
-            -self.max_discharge_current_a,
-            min(self.max_charge_current_a, self.battery_current_a)
+        # Net power is the post-distribution balance before battery current limiting.
+        _, self.net_power_w = compute_power_balance(
+            self.array_power_w, total_load_w, self.distribution_efficiency
         )
 
-        # Update SOC
+        # SOC, terminal voltage and current depend on each other. Iterate the simplified
+        # model so the reported current satisfies clamp(net_power / reported_voltage),
+        # rather than using the previous tick's voltage. The mission arc's surplus above
+        # the charge limit is intentionally left implicit in the pre-limit net power.
         dt_hours = dt / 3600.0
-        self.battery_soc = compute_battery_soc(
-            self.battery_soc,
-            self.battery_current_a,
-            self.battery_capacity_ah,
-            dt_hours,
-        )
+        initial_soc = self.battery_soc
+        current_a = self._limited_battery_current(self.net_power_w, self.battery_voltage_v)
+        for _ in range(20):
+            next_soc = compute_battery_soc(
+                initial_soc, current_a, self.battery_capacity_ah, dt_hours
+            )
+            voltage_v = self._calculate_battery_voltage(
+                next_soc, current_a, electronics_bay_temp_k
+            )
+            next_current_a = self._limited_battery_current(self.net_power_w, voltage_v)
+            converged = abs(next_current_a - current_a) < 1e-9
+            current_a = next_current_a
+            if converged:
+                break
 
-        # Update battery voltage
+        self.battery_current_a = current_a
+        self.battery_soc = compute_battery_soc(
+            initial_soc, current_a, self.battery_capacity_ah, dt_hours
+        )
         self._update_battery_voltage(electronics_bay_temp_k)
 
         # Update power state
